@@ -1,0 +1,3 @@
+
+class InvalidGraphException(Exception):
+    pass
