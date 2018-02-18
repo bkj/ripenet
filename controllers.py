@@ -4,6 +4,7 @@
     controllers.py
 """
 
+import sys
 import copy
 import numpy as np
 
@@ -13,9 +14,8 @@ from torch.autograd import Variable
 from torch.nn import functional as F
 
 
-class Controller(nn.Module):
-    """ REINFORCE controller """
-    def get_advantage(self, rewards, decay=0.9):
+class Controller(object):
+    def get_advantages(self, rewards, decay=0.9):
         if self.baseline is None:
             self.baseline = rewards.mean()
         else:
@@ -23,66 +23,60 @@ class Controller(nn.Module):
         
         return rewards - self.baseline
     
-    def step(self, rewards, log_probs, entropies=None, entropy_penalty=0.0):
+    def reinforce_step(self, rewards, log_probs, entropies=None, entropy_penalty=0.0):
+        """ REINFORCE """
+        
         if self._cuda:
             rewards = rewards.cuda()
             log_probs = log_probs.cuda()
             if entropies is not None:
                 entropies = entropies.cuda()
         
+        advantages = self.get_advantages(rewards)
+        advantages = Variable(advantages, requires_grad=False)
+        advantages = advantages.expand_as(log_probs)
+        
         self.opt.zero_grad()
         
-        advantage = self.get_advantage(rewards)
-        advantage = advantage.expand_as(log_probs)
-        advantage = Variable(advantage, requires_grad=False)
-        
-        loss = -(log_probs * advantage).sum()
+        loss = -(log_probs * advantages).sum()
         if entropies is not None:
             loss -= entropy_penalty * entropies.sum()
         
         loss.backward()
         self.opt.step()
-
-# >>
-
-class PPOController(Controller):
-    """ UNTESTED """
-    def step(self, rewards, log_probs, entropies=None, entropy_penalty=0.0, states=None, actions=None, clip_eps=0.2, ppo_epochs=1):
-        assert states is not None, "PPOController: states is None"
-        assert actions is not None, "PPOController: actions is None"
+    
+    def ppo_step(self, rewards, states, actions, entropy_penalty=0.0, clip_eps=0.2, ppo_epochs=4):
+        """ Proximal Policy Optimization """
         
         if self._cuda:
             rewards = rewards.cuda()
-            log_probs = log_probs.cuda()
-            if entropies is not None:
-                entropies = entropies.cuda()
         
-        advantage = self.get_advantage(rewards)
-        advantage = advantage.expand_as(log_probs)
-        advantage = Variable(advantage, requires_grad=False)
+        advantages = self.get_advantages(rewards)
+        advantages = Variable(advantages, requires_grad=False)
         
         old = copy.deepcopy(self)
         for ppo_epoch in range(ppo_epochs):
             
             self.opt.zero_grad()
             
-            _, log_probs, entropies = self.evaluate(states, actions)
-            _, old_log_probs, _ = old.evaluate(states, actions) # Need to implement this
+            _, log_probs, entropies = self(states, fixed_actions=actions)
+            _, old_log_probs, _ = old(states, fixed_actions=actions)
+            
+            advantages = advantages.expand_as(log_probs)
             
             ratio = torch.exp(log_probs - old_log_probs)
             surr1 = ratio * advantages
             surr2 = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * advantages
-            loss = -torch.min(surr1, surr2).mean()
+            loss  = -torch.min(surr1, surr2).mean()
             
-            if entropies is not None:
-                loss -= entropy_penalty * entropies.sum()
+            loss -= entropy_penalty * entropies.sum()
             
             loss.backward()
             self.opt.step()
 
 # <<
 
-class MLPController(PPOController):
+class MLPController(Controller, nn.Module):
     def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, temperature=1, cuda=False):
         super(MLPController, self).__init__()
         
@@ -103,7 +97,7 @@ class MLPController(PPOController):
         if cuda:
             self.cuda()
             
-    def run(self, states, fixed_actions=None):
+    def __call__(self, states, fixed_actions=None):
         if self._cuda:
             self.states = states.cuda()
         
@@ -159,7 +153,7 @@ class LSTMController(Controller):
         
         # !! Need to initialize other parameters?
     
-    def run(self, states, fixed_actions=None):
+    def __call__(self, states, fixed_actions=None):
         lstm_state = (
             Variable(torch.zeros(states.shape[0], self.hidden_dim)),
             Variable(torch.zeros(states.shape[0], self.hidden_dim)),

@@ -67,7 +67,7 @@ for iter in range(n_iters):
     # # Train child
     
     # states = Variable(torch.randn(child_steps_per_iter, state_dim))
-    # actions, _, _ = controller.run(states)
+    # actions, _, _ = controller(states)
     # child.train_paths(actions)
     
     # --
@@ -75,13 +75,15 @@ for iter in range(n_iters):
     
     for controller_step in range(controller_steps_per_iter):
         states = Variable(torch.randn(controller_paths_per_step, state_dim))
-        actions, log_probs, entropies = controller.run(states)
+        actions, log_probs, entropies = controller(states)
         rewards = child.eval_paths(actions, n=1)
-        controller.step(rewards, log_probs, entropies=None, states=states, actions=actions) # !! Could take multiple steps here, while recomputing the log prob
+        
+        # controller.reinforce_step(rewards, log_probs=log_probs, entropies=entropies)
+        controller.ppo_step(rewards, states=states, actions=actions)
         
         history.append({
             "mean_reward"     : to_numpy(rewards).mean(),
-            "mean_path"       : to_numpy(paths).mean(axis=0),
+            "mean_actions"    : to_numpy(actions).mean(axis=0),
             
             "controller_step" : len(history),
             "eval_records"    : child.eval_records,
@@ -93,7 +95,7 @@ for iter in range(n_iters):
     
     # print('eval=%d' % iter, file=sys.stderr)
     # states = Variable(torch.randn(controller_candidates_per_eval, state_dim))
-    # actions, log_probs, entropies = controller.run(states)
+    # actions, log_probs, entropies = controller(states)
     # rewards = child.eval_paths(actions)
     
     # print("rewards.min    ->", rewards.min(), file=sys.stderr)
