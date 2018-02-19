@@ -16,3 +16,14 @@ python setup.py clean --all install
 cd ~/projects/ripenet
 
 python tests/test.py
+
+# --
+# Usage
+
+mkdir -p _results
+
+python main.py --architecture mlp --algorithm reinforce > _results/mlp-reinforce
+python main.py --architecture mlp --algorithm ppo > _results/mlp-ppo
+
+python main.py --architecture lstm --algorithm reinforce > _results/lstm-reinforce
+python main.py --architecture lstm --algorithm ppo > _results/lstm-ppo

@@ -122,7 +122,7 @@ class MLPController(Controller, nn.Module):
         return actions, action_log_probs, entropy
 
 
-class LSTMController(Controller):
+class LSTMController(Controller, nn.Module):
     def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, temperature=1, cuda=False):
         super(LSTMController, self).__init__()
         
@@ -176,10 +176,10 @@ class LSTMController(Controller):
             
             # Sample action
             probs   = F.softmax(logits * self.temperature, dim=-1)
-            if actions is None:
+            if fixed_actions is None:
                 actions = probs.multinomial().squeeze()
             else:
-                actions = fixed_actions[:,step_idx].squeeze()
+                actions = fixed_actions[:,step_idx].contiguous().squeeze()
             
             all_actions.append(actions)
             

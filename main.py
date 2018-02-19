@@ -29,7 +29,7 @@ np.set_printoptions(linewidth=120)
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--architecture', type=str, default='mlp', choice=['mlp', 'lstm'])
+    parser.add_argument('--architecture', type=str, default='mlp', choices=['mlp', 'lstm'])
     parser.add_argument('--algorithm', type=str, default='reinforce', choices=['reinforce', 'ppo'])
     parser.add_argument('--child', type=str, default='lazy_child', choices=['lazy_child'])
     return parser.parse_args()
@@ -43,7 +43,7 @@ state_dim = 32
 
 child_steps_per_iter = 100
 
-controller_steps_per_iter = 100
+controller_steps_per_iter = 50
 controller_paths_per_step = 100
 
 controller_candidates_per_eval = 100
