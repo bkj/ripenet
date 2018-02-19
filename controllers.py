@@ -122,15 +122,16 @@ class Controller(object):
             loss.backward()
             self.opt.step()
 
-# <<
+# --
+# Simple MLP controller
 
 class MLPController(Controller, nn.Module):
     def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, temperature=1, cuda=False):
         super(MLPController, self).__init__()
         
-        self.output_length = output_length
+        self.output_length   = output_length
         self.output_channels = output_channels
-        self.temperature = temperature
+        self.temperature     = temperature
         
         self.model = nn.Sequential(*[
             nn.Linear(input_dim, hidden_dim),
@@ -152,22 +153,30 @@ class MLPController(Controller, nn.Module):
         logits = self.model(states)
         logits = logits.view(-1, self.output_channels)
         
-        probs   = F.softmax(logits * self.temperature, dim=-1)
-        if fixed_actions is None:
-            actions = probs.multinomial().squeeze()
-        else:
-            actions = fixed_actions
+        actions, action_log_probs, entropy = sample_softmax(
+            logits=logits,
+            temperature=self.temperature,
+            fixed_action=fixed_actions
+        )
         
-        log_probs = F.log_softmax(logits * self.temperature, dim=-1)
-        action_log_probs = log_probs.gather(1, actions.view(-1, 1))
-        
-        entropy = -(probs * log_probs).sum(dim=1)
-        
-        actions = actions.view(-1, self.output_length)
+        actions          = actions.view(-1, self.output_length)
         action_log_probs = action_log_probs.view(-1, self.output_length)
-        entropy = entropy.view(-1, self.output_length)
+        entropy          = entropy.view(-1, self.output_length)
         
         return actions, action_log_probs, entropy
+
+# --
+# Simple LSTM controller
+
+class BasicStep(nn.Module):
+    def __init__(self, output_channels, hidden_dim):
+        super(BasicStep, self).__init__()
+        
+        self.decoder = nn.Linear(hidden_dim, output_channels)
+        self.emb = nn.Embedding(output_channels, hidden_dim)
+    
+    def init_weights(self):
+        self.decoder.bias.data.fill_(0)
 
 
 class LSTMController(Controller, nn.Module):
@@ -177,16 +186,19 @@ class LSTMController(Controller, nn.Module):
         self.input_dim       = input_dim
         self.output_length   = output_length
         self.output_channels = output_channels
-        
         self.hidden_dim      = hidden_dim
         self.temperature     = temperature
         
-        self.state_encoder   = nn.Linear(input_dim, hidden_dim) # maps observations to lstm dim
-        self.state_embedding = nn.Embedding(output_length * output_channels, hidden_dim) # map previous actions to lstm dim
-        self.lstm_cell       = nn.LSTMCell(hidden_dim, hidden_dim)
-        self.decoders        = nn.ModuleList([nn.Linear(hidden_dim, output_channels)] * output_length)
+        self.state_encoder = nn.Linear(input_dim, hidden_dim) # maps observations to lstm dim
+        self.lstm_cell     = nn.LSTMCell(hidden_dim, hidden_dim)
         
-        self.init_weights()
+        steps = []
+        for _ in range(output_length):
+            step = BasicStep(output_channels=output_channels, hidden_dim=hidden_dim)
+            step.init_weights()
+            steps.append(step)
+        
+        self.steps = nn.ModuleList(steps)
         
         self._cuda    = cuda
         self.baseline = None
@@ -194,12 +206,6 @@ class LSTMController(Controller, nn.Module):
         
         if cuda:
             self.cuda()
-    
-    def init_weights(self):
-        for decoder in self.decoders:
-            decoder.bias.data.fill_(0)
-        
-        # !! Need to initialize other parameters?
     
     def __call__(self, states, fixed_actions=None):
         lstm_state = (
@@ -213,41 +219,34 @@ class LSTMController(Controller, nn.Module):
         
         lstm_inputs = self.state_encoder(states)
         
-        all_actions, all_log_probs, all_entropies = [], [], []
+        all_actions, all_action_log_probs, all_entropies = [], [], []
         for step_idx in range(self.output_length):
             
-            # Run through LSTM
+            step = self.steps[step_idx]
+            
             lstm_state = self.lstm_cell(lstm_inputs, lstm_state)
-            logits = self.decoders[step_idx](lstm_state[0])
+            logits = step.decoder(lstm_state[0])
             
-            # !! Scale logits by temperature and/or tanh as mentioned in paper
-            
-            # Sample action
-            probs = F.softmax(logits * self.temperature, dim=-1)
-            if fixed_actions is None:
-                actions = probs.multinomial().squeeze()
-            else:
-                actions = fixed_actions[:,step_idx].contiguous().squeeze()
+            actions, log_probs, entropy = sample_softmax(
+                logits=logits,
+                temperature=self.temperature,
+                fixed_action=fixed_actions[:,step_idx]
+            )
             
             all_actions.append(actions)
-            
-            # Compute log probability
-            log_probs = F.log_softmax(logits * self.temperature, dim=-1)
-            all_log_probs.append(log_probs.gather(1, actions.view(-1, 1)))
-            
-            entropy = -(probs * log_probs).sum(dim=1)
+            all_action_log_probs.append(log_probs)
             all_entropies.append(entropy)
             
-            lstm_inputs = self.state_embedding(actions + self.output_channels * step_idx)
+            lstm_inputs = step.emb(actions)
         
-        all_actions   = torch.stack(all_actions, dim=1)
-        all_log_probs = torch.cat(all_log_probs, dim=-1)
-        all_entropies = torch.cat(all_entropies, dim=-1)
+        all_actions          = torch.stack(all_actions, dim=1)
+        all_action_log_probs = torch.cat(all_action_log_probs, dim=-1)
+        all_entropies        = torch.cat(all_entropies, dim=-1)
         
-        return all_actions, all_log_probs, all_entropies
+        return all_actions, all_action_log_probs, all_entropies
 
 # --
-# Specific Search space controllers
+# ENAS Macro CNN controller
 
 class MacroStep(nn.Module):
     def __init__(self, num_ins, num_ops, hidden_dim):
@@ -260,7 +259,6 @@ class MacroStep(nn.Module):
         self.emb_op = nn.Embedding(num_ops, hidden_dim)
     
     def init_weights(self):
-        # !! More ??
         self.decoder_in.bias.data.fill_(0)
         self.decoder_op.bias.data.fill_(0)
 
@@ -295,9 +293,6 @@ class MacroLSTMController(Controller, nn.Module):
         if cuda:
             self.cuda()
     
-    def init_weights(self):
-        pass
-        
     def __call__(self, states, fixed_actions=None):
         lstm_state = (
             Variable(torch.zeros(states.shape[0], self.hidden_dim)),
@@ -310,7 +305,7 @@ class MacroLSTMController(Controller, nn.Module):
         
         lstm_inputs = self.state_encoder(states)
         
-        all_actions, all_log_probs, all_entropies = [], [], []
+        all_actions, all_action_log_probs, all_entropies = [], [], []
         for step_idx in range(self.output_length):
             step = self.steps[step_idx]
             
@@ -320,14 +315,14 @@ class MacroLSTMController(Controller, nn.Module):
             lstm_state = self.lstm_cell(lstm_inputs, lstm_state)
             logits = step.decoder_in(lstm_state[0])
             
-            actions, int_actions, log_probs, entropy = sample_bernoulli(
+            actions, int_actions, action_log_probs, entropy = sample_bernoulli(
                 logits=logits,
                 temperature=self.temperature, 
                 fixed_action=fixed_actions[:,2 * step_idx] if fixed_actions is not None else None
             )
             
-            all_log_probs.append(log_probs)
             all_actions.append(int_actions) # Record numeric encoding of k-hot vector
+            all_action_log_probs.append(action_log_probs)
             all_entropies.append(entropy)
             
             lstm_inputs = step.emb_in(actions.float()) # Embedding of k-hot vector
@@ -338,20 +333,20 @@ class MacroLSTMController(Controller, nn.Module):
             lstm_state = self.lstm_cell(lstm_inputs, lstm_state)
             logits     = step.decoder_op(lstm_state[0])
             
-            actions, log_probs, entropy = sample_softmax(
+            actions, action_log_probs, entropy = sample_softmax(
                 logits=logits,
                 temperature=self.temperature, 
                 fixed_action=fixed_actions[:,2 * step_idx + 1] if fixed_actions is not None else None
             )
             
             all_actions.append(actions)
-            all_log_probs.append(log_probs)
+            all_action_log_probs.append(action_log_probs)
             all_entropies.append(entropy)
             
             lstm_inputs = step.emb_op(actions)
             
-        all_actions   = torch.stack(all_actions, dim=-1)
-        all_log_probs = torch.cat(all_log_probs, dim=-1)
-        all_entropies = torch.cat(all_entropies, dim=-1)
+        all_actions          = torch.stack(all_actions, dim=-1)
+        all_action_log_probs = torch.cat(all_action_log_probs, dim=-1)
+        all_entropies        = torch.cat(all_entropies, dim=-1)
         
-        return all_actions, all_log_probs, all_entropies
+        return all_actions, all_action_log_probs, all_entropies
