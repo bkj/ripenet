@@ -19,7 +19,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
-from basenet import BaseNet
+import basenet
 from basenet.helpers import to_numpy
 
 from .helpers import InvalidGraphException
@@ -98,7 +98,7 @@ class CBlock(nn.Module):
 # --
 # Network
 
-class MaskWorker(BaseNet):
+class MaskWorker(basenet.BaseNet):
     def __init__(self, num_blocks=[2, 2, 2, 2], lr_scheduler=None, num_classes=10, **kwargs):
         super(MaskWorker, self).__init__(**kwargs)
         

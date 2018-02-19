@@ -20,8 +20,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
-from basenet import BaseNet
-from basenet.helpers import to_numpy
+import basenet
 
 from .helpers import InvalidGraphException
 
@@ -191,7 +190,7 @@ class CellBlock(nn.Module):
 # --
 # Models
 
-class CellWorker(nn.Module):
+class CellWorker(basenet.BaseNet):
     
     def __init__(self, num_classes=10, num_blocks=[2, 2, 2, 2], num_channels=[64, 128, 256, 512]):
         super(CellWorker, self).__init__()
@@ -221,5 +220,3 @@ class CellWorker(nn.Module):
         x = self.classifier(x)
         x = x.view((x.shape[0], x.shape[1]))
         return x
-
-c = CellWorker().cuda()

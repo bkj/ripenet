@@ -18,7 +18,7 @@ cd ~/projects/ripenet
 python tests/test.py
 
 # --
-# Usage
+# Testing on dummy data
 
 mkdir -p _results
 
@@ -27,3 +27,9 @@ python main.py --architecture mlp --algorithm ppo > _results/mlp-ppo
 
 python main.py --architecture lstm --algorithm reinforce > _results/lstm-reinforce
 python main.py --architecture lstm --algorithm ppo > _results/lstm-ppo
+
+# --
+# Train a CellWorker model (should be approximately the same as preactivation ResNet18, though not exactly)
+
+python tests/train_cell_worker.py > pretrained_models/cell_worker-20
+python tests/train_cell_worker.py --outpath pretrained_models/cell_worker-50.weights > pretrained_models/cell_worker-50.log
