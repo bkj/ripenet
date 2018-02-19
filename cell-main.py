@@ -14,9 +14,9 @@ from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
-from controllers import MLPController, LSTMController
-from children import Child, LazyChild
-from workers import MaskWorker
+from controllers import MicroLSTMController
+from children import LazyChild
+from workers import CellWorker
 from data import make_cifar_dataloaders
 
 from basenet.helpers import to_numpy
@@ -29,10 +29,10 @@ np.set_printoptions(linewidth=120)
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--architecture', type=str, default='mlp', choices=['mlp', 'lstm'])
-    parser.add_argument('--algorithm', type=str, default='reinforce', choices=['reinforce', 'ppo'])
     parser.add_argument('--child', type=str, default='lazy_child', choices=['lazy_child'])
-    parser.add_argument('--pretrained-path', type=str, default='./pretrained_models/sgdr-train0.9/weights')
+    parser.add_argument('--pretrained-path', type=str, default='./pretrained_models/cell_worker-50.weights')
+    parser.add_argument('--train-size', type=float, default=0.9)
+    parser.add_argument('--seed', type=int, default=123)
     return parser.parse_args()
 
 args = parse_args()
@@ -49,8 +49,8 @@ controller_paths_per_step = 100
 
 controller_candidates_per_eval = 100
 
-output_length = 12 # Defined by pipenet
-output_channels = 2
+output_length   = 2 # len(CellBlock.nodes)
+output_channels = 8 # len(CellBlock.op_fns)
 
 n_iters = 10
 
@@ -63,24 +63,22 @@ controller_kwargs = {
     "output_channels" : output_channels,
 }
 
-if args.architecture == 'mlp':
-    controller = MLPController(**controller_kwargs)
-else:
-    controller = LSTMController(**controller_kwargs)
+
+controller = MicroLSTMController(**controller_kwargs)
 
 # --
 # Initialize child
 
-dataloaders = make_cifar_dataloaders(train_size=0.9, download=False, seed=123, num_workers=0)
+dataloaders = make_cifar_dataloaders(train_size=args.train_size,  download=False, seed=args.seed, num_workers=0)
 
-worker = MaskWorker().cuda()
+worker = CellWorker().cuda()
 if args.pretrained_path is not None:
-    print('main.py: loading pretrained model %s' % args.pretrained_models, file=sys.stderr)
+    print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
     worker.load_state_dict(torch.load(args.pretrained_path))
 else:
     raise Exception
 
-print('worker ->', worker, file=sys.stderr)
+# print('worker ->', worker, file=sys.stderr)
 
 if args.child == 'lazy_child':
     child = LazyChild(worker=worker, dataloaders=dataloaders)

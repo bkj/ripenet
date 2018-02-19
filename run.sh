@@ -18,7 +18,7 @@ cd ~/projects/ripenet
 python tests/test.py
 
 # --
-# Testing on dummy data
+# Testing on a fixed architecture
 
 mkdir -p _results
 
@@ -33,3 +33,8 @@ python main.py --architecture lstm --algorithm ppo > _results/lstm-ppo
 
 python tests/train_cell_worker.py > pretrained_models/cell_worker-20
 python tests/train_cell_worker.py --outpath pretrained_models/cell_worker-50.weights > pretrained_models/cell_worker-50.log
+
+# --
+# 
+
+python cell-main.py --pretrained-path pretrained_models/cell_worker-50.weights
