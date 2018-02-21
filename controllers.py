@@ -62,12 +62,14 @@ def sample_bernoulli(logits, fixed_action=None):
     
     return actions.long(), int_actions.long(), action_log_probs.float(), entropy.float()
 
-def prep_logits(logits, temperature):
-    return logits / temperature
+def prep_logits(logits, temperature=1.0, clip_logits=-1):
+    if clip_logits == -1:
+        return logits / temperature
+    elif clip_logits > 0:
+        return clip_logits * F.tanh(logits / temperature)
+    else:
+        raise Exception('prep_logits: illegal clip_logits value of %f' % clip_logits)
 
-# def prep_logits(logits, temperature, C=1):
-#     """ I think this is what they do in the paper? """
-#     return C * F.tanh(logits / temperature)
 
 # --
 # Controllers
@@ -283,7 +285,8 @@ class MicroStep(nn.Module):
 
 
 class MicroLSTMController(Controller, nn.Module):
-    def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, n_input_nodes=1, temperature=1, opt_params={}, cuda=False):
+    def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, n_input_nodes=1, 
+        temperature=1, clip_logits=-1, opt_params={}, cuda=False):
         """
             input_dim:       dimension of states
             output_length:   number of cells
@@ -291,6 +294,7 @@ class MicroLSTMController(Controller, nn.Module):
             hidden_dim:      dimension of internal representations
             n_input_nodes:   number of input nodes
             temperature:     temperature to scale logits (higher -> more entropy)
+            clip_logits:     if > 0, clip logits w/ tanh and scale to this size
             opt_params:      optimizer parameters
         """
         
@@ -301,6 +305,7 @@ class MicroLSTMController(Controller, nn.Module):
         self.output_channels = output_channels
         self.hidden_dim      = hidden_dim
         self.temperature     = temperature
+        self.clip_logits     = clip_logits
         
         self.state_encoder   = nn.Linear(input_dim, hidden_dim) # maps observations to lstm dim
         self.lstm_cell       = nn.LSTMCell(hidden_dim, hidden_dim)
@@ -354,7 +359,7 @@ class MicroLSTMController(Controller, nn.Module):
                 lstm_state = self.lstm_cell(lstm_inputs, lstm_state)
                 logits = decoder(lstm_state[0])
                 
-                logits = prep_logits(logits, self.temperature)
+                logits = prep_logits(logits, temperature=self.temperature, clip_logits=clip_logits)
                 
                 actions, action_log_probs, entropy = sample_softmax(
                     logits=logits,

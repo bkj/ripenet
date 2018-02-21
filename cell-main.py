@@ -42,9 +42,11 @@ def parse_args():
     parser.add_argument('--controller-eval-paths-per-epoch',   type=int, default=100) # Number of paths to sample to quantify performance
     
     parser.add_argument('--num-ops', type=int, default=6)     # Number of ops to sample
-    parser.add_argument('--num-cells', type=int, default=2)     # Number of cells to sample
+    parser.add_argument('--num-nodes', type=int, default=2)     # Number of cells to sample
     
-    parser.add_argument('--temperature', type=float, default=1)     # Temperature for logit -- higher means more entropy 
+    parser.add_argument('--temperature', type=float, default=1.0)     # Temperature for logit -- higher means more entropy 
+    parser.add_argument('--clip-logits', type=float, default=-1.0)
+    
     parser.add_argument('--entropy-penalty', type=float, default=0.0)   # Penalize entropy 
     
     parser.add_argument('--controller-lr', type=float, default=0.001)
@@ -58,6 +60,8 @@ def parse_args():
 
 args = parse_args()
 
+json.dump(vars(args), open(args.outpath + '.config', 'w'))
+
 # --
 # Parameters
 
@@ -68,9 +72,10 @@ state_dim = 32
 
 controller_kwargs = {
     "input_dim" : state_dim,
-    "output_length" : args.num_cells,
+    "output_length" : args.num_nodes,
     "output_channels" : args.num_ops,
     "temperature" : args.temperature,
+    "clip_logits" : args.clip_logits,
     "opt_params" : {
         "lr" : args.controller_lr,
     }
@@ -92,9 +97,9 @@ else:
 # Worker
 
 if args.dataset == 'cifar10':
-    worker = CellWorker().cuda()
+    worker = CellWorker(num_nodes=args.num_nodes).cuda()
 elif args.dataset == 'fashion_mnist':
-    worker = CellWorker(input_channels=1, num_blocks=[1, 1, 1], num_channels=[16, 32, 64], num_nodes=2).cuda()
+    worker = CellWorker(input_channels=1, num_blocks=[1, 1, 1], num_channels=[16, 32, 64], num_nodes=args.num_nodes).cuda()
 else:
     raise Exception()
 

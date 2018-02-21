@@ -71,15 +71,29 @@ done;
 #     --pretrained-path pretrained_models/cell_worker-00000000
 
 
-mkdir _results/trained
-iter=1
+# iter=1
+# python cell-main.py \
+#     --algorithm ppo \
+#     --outpath _results/trained/trained.$iter \
+#     --num-ops 6 \
+#     --temperature 2.5 \
+#     --epochs 1000 \
+#     --controller-lr 0.00035 \
+#     --child child
+
+# # 500 epochs, converges to a null cell
+
+# --
+# Training on fashionMNIST
+
+iter=0
+mkdir _results/fashion
 python cell-main.py \
     --algorithm ppo \
-    --outpath _results/trained/trained.$iter \
+    --outpath _results/fashion/trained.$iter \
+    --dataset fashion_mnist \
     --num-ops 6 \
     --temperature 2.5 \
     --epochs 1000 \
     --controller-lr 0.00035 \
     --child child
-
-# 500 epochs, converges to a null cell

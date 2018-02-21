@@ -45,6 +45,13 @@ class Accumulator(nn.Module):
         return 'Accumulator(%s)' % self.name
 
 
+class Flatten(nn.Module):
+    def forward(self, x):
+        return x.view(x.shape[0], -1)
+        
+    def __repr__(self):
+        return "Flatten()"
+
 class IdentityLayer(nn.Module):
     def forward(self, x):
         return x
@@ -100,12 +107,12 @@ class CellBlock(nn.Module):
         self.num_nodes = num_nodes
         
         self.op_fns = OrderedDict([
-            ("identity", IdentityLayer),
             ("zero____", ZeroLayer),
-            ("conv3___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
-            ("conv5___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
-            ("sepconv3", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)), # depthwise separable
-            ("sepconv5", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)), # depthwise separable
+            ("identity", IdentityLayer),
+            ("conv3___", partial(nn.Conv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
+            ("conv5___", partial(nn.Conv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
+            # ("sepconv3", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)), # depthwise separable
+            # ("sepconv5", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)), # depthwise separable
             # >>
             # ("avgpool_", partial(nn.AvgPool2d, stride=stride, kernel_size=3, padding=1)),
             # ("maxpool_", partial(nn.MaxPool2d, stride=stride, kernel_size=3, padding=1)),
@@ -233,43 +240,7 @@ class CellBlock(nn.Module):
 # --
 # Models
 
-class CellWorker(basenet.BaseNet):
-    
-    def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[64, 128, 256, 512], num_nodes=2):
-        super(CellWorker, self).__init__()
-        
-        self.num_nodes = num_nodes
-        
-        self.prep = BNConv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=3, padding=1)
-        
-        self.cell_blocks = []
-        
-        all_layers = []
-        for i, (block, channels) in enumerate(zip(num_blocks, num_channels)):
-            layers = []
-            for _ in range(block):
-                cell_block = CellBlock(channels=channels, num_nodes=num_nodes)
-                layers.append(cell_block)
-                self.cell_blocks.append(cell_block)
-            
-            all_layers.append(nn.Sequential(*layers))
-            
-            if (i + 1) < len(num_blocks):
-                all_layers.append(BNConv2d(in_channels=channels, out_channels=num_channels[i + 1], kernel_size=3, padding=1, stride=2))
-        
-        self.layers = nn.Sequential(*all_layers)
-        self.classifier = nn.Sequential(
-            BNConv2d(in_channels=num_channels[-1], out_channels=num_classes, kernel_size=1, padding=0, stride=1),
-            nn.AdaptiveAvgPool2d((1, 1)),
-        )
-    
-    def forward(self, x):
-        x = self.prep(x)
-        x = self.layers(x)
-        x = self.classifier(x)
-        x = x.view((x.shape[0], x.shape[1]))
-        return x
-    
+class _CellWorker(basenet.BaseNet):
     def reset_pipes(self):
         for cell_block in self.cell_blocks:
             _ = cell_block.reset_pipes()
@@ -299,4 +270,79 @@ class CellWorker(basenet.BaseNet):
     @property
     def is_valid(self, layer='_output'):
         return np.all([cell_block.is_valid for cell_block in self.cell_blocks])
+
+
+class CellWorker(_CellWorker):
+    
+    def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[64, 128, 256, 512], num_nodes=2):
+        super(CellWorker, self).__init__()
+        
+        self.num_nodes = num_nodes
+        
+        self.prep = BNConv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=3, padding=1)
+        
+        self.cell_blocks = []
+        
+        all_layers = []
+        for i, (block, channels) in enumerate(zip(num_blocks, num_channels)):
+            layers = []
+            for _ in range(block):
+                cell_block = CellBlock(channels=channels, num_nodes=num_nodes)
+                layers.append(cell_block)
+                self.cell_blocks.append(cell_block)
+            
+            all_layers.append(nn.Sequential(*layers))
+            
+            if (i + 1) < len(num_blocks):
+                # Spatial downsampling
+                all_layers.append(BNConv2d(in_channels=channels, out_channels=num_channels[i + 1], kernel_size=3, padding=1, stride=2))
+        
+        self.layers = nn.Sequential(*all_layers)
+        self.classifier = nn.Sequential(
+            BNConv2d(in_channels=num_channels[-1], out_channels=num_classes, kernel_size=1, padding=0, stride=1),
+            nn.AdaptiveAvgPool2d((1, 1)),
+        )
+    
+    def forward(self, x):
+        x = self.prep(x)
+        x = self.layers(x)
+        x = self.classifier(x)
+        x = x.view((x.shape[0], x.shape[1]))
+        return x
+
+
+
+class MNISTCellWorker(_CellWorker):
+    def __init__(self, num_classes=10, input_channels=1, channels=32, num_nodes=2):
+        super(MNISTCellWorker, self).__init__()
+        
+        self.num_nodes = num_nodes
+        
+        self.prep       = nn.Conv2d(in_channels=input_channels, out_channels=32, kernel_size=3, padding=1)
+        self.cell_block = CellBlock(channels=channels, num_nodes=num_nodes)
+        self.avg_pool   = nn.AdaptiveAvgPool2d((1, 1))
+        self.classifier = nn.Linear(channels, num_classes)
+        
+        self.cell_blocks = [self.cell_block]
+        
+        self.layers = nn.Sequential(*[
+            nn.Conv2d(in_channels=input_channels, out_channels=32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d((2, 2)),
+            Flatten(),
+            nn.Linear(12544, 32),
+            nn.ReLU(),
+            nn.Linear(32, num_classes)
+        ])
+    
+    def forward(self, x):
+        # x = self.prep(x)
+        # x = self.cell_block(x)
+        # x = self.avg_pool(x)
+        # x = x.view((x.shape[0], x.shape[1]))
+        # return self.classifier(x)
+        x = self.layers(x)
+        return x
 
