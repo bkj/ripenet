@@ -34,7 +34,7 @@ np.set_printoptions(linewidth=120)
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--outpath', type=str, required=True)
-    parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'fashion_mnist'])
+    parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'fashion_mnist', 'mnist'])
     parser.add_argument('--architecture', type=str, default='00210102')
     
     parser.add_argument('--epochs', type=int, default=50)
@@ -62,20 +62,18 @@ if __name__ == "__main__":
     if args.dataset == 'cifar10':
         print('train_cell_worker: make_cifar_dataloaders', file=sys.stderr)
         dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed)
-    elif args.dataset == 'fashion_mnist':
-        print('train_cell_worker: make_mnist_dataloaders', file=sys.stderr)
-        dataloaders = make_mnist_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pretensor=True, mode='fashion_mnist')
+    elif 'mnist' in args.dataset:
+        print('train_cell_worker: make_mnist_dataloaders (%s)' % args.dataset, file=sys.stderr)
+        dataloaders = make_mnist_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pretensor=True, mode=args.dataset)
     else:
         raise Exception()
     
     # --
     # Model
     
-    print('train_cell_worker: CellWorker', file=sys.stderr)
-    
     if args.dataset == 'cifar10':
         worker = CellWorker(num_nodes=args.num_nodes).cuda()
-    elif args.dataset == 'fashion_mnist':
+    elif 'mnist' in args.dataset:
         # worker = CellWorker(input_channels=1, num_blocks=[1, 1, 1], num_channels=[16, 32, 64], num_nodes=args.num_nodes).cuda()
         worker = MNISTCellWorker(num_nodes=args.num_nodes).cuda()
     else:
@@ -89,12 +87,13 @@ if __name__ == "__main__":
     # Training options
     
     lr_scheduler = getattr(LRSchedule, args.lr_schedule)(lr_init=args.lr_init, epochs=args.epochs)
+    print(worker)
     worker.init_optimizer(
-        opt=torch.optim.Adam,
+        opt=torch.optim.SGD,
         params=worker.parameters(),
-        # lr_scheduler=lr_scheduler,
-        # momentum=0.9,
-        # weight_decay=5e-4
+        lr_scheduler=lr_scheduler,
+        momentum=0.9,
+        weight_decay=5e-4
     )
     
     # Set architectecture

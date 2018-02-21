@@ -72,9 +72,12 @@ class BNConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, **kwargs):
         super(BNConv2d, self).__init__()
         
-        self.add_module('bn', nn.BatchNorm2d(in_channels))
-        self.add_module('relu', nn.ReLU())
+        # self.add_module('bn', nn.BatchNorm2d(in_channels))
+        # self.add_module('relu', nn.ReLU())
+        # self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
+        
         self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
+        self.add_module('relu', nn.ReLU())
     
     def forward(self, x):
         return self.conv(self.relu(self.bn(x)))
@@ -313,36 +316,37 @@ class CellWorker(_CellWorker):
 
 
 class MNISTCellWorker(_CellWorker):
-    def __init__(self, num_classes=10, input_channels=1, channels=32, num_nodes=2):
+    def __init__(self, num_classes=10, input_channels=1, channels=64, num_nodes=2, num_branches=2):
         super(MNISTCellWorker, self).__init__()
         
         self.num_nodes = num_nodes
         
-        self.prep       = nn.Conv2d(in_channels=input_channels, out_channels=32, kernel_size=3, padding=1)
-        self.cell_block = CellBlock(channels=channels, num_nodes=num_nodes)
-        self.avg_pool   = nn.AdaptiveAvgPool2d((1, 1))
-        self.classifier = nn.Linear(channels, num_classes)
+        self.prep = nn.Sequential(*[
+            # nn.Conv2d(1, 64, kernel_size=3, padding=1),
+            # nn.MaxPool2d(2),
+            # nn.ReLU(),
+            nn.Conv2d(1, 64, kernel_size=1, padding=0),
+            nn.MaxPool2d(2),
+        ])
         
+        # num_branches=1, architecture="0002"
+        self.cell_block = CellBlock(channels=64, num_nodes=num_nodes, num_branches=num_branches)
         self.cell_blocks = [self.cell_block]
         
-        self.layers = nn.Sequential(*[
-            nn.Conv2d(in_channels=input_channels, out_channels=32, kernel_size=3, padding=1),
+        self.post = nn.Sequential(*[
+            nn.Dropout2d(p=0.5),
+            nn.MaxPool2d(2),
             nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d((2, 2)),
             Flatten(),
-            nn.Linear(12544, 32),
+            nn.Linear(3136, 128),
             nn.ReLU(),
-            nn.Linear(32, num_classes)
+            nn.Dropout(p=0.5),
+            nn.Linear(128, 10),
         ])
     
     def forward(self, x):
-        # x = self.prep(x)
-        # x = self.cell_block(x)
-        # x = self.avg_pool(x)
-        # x = x.view((x.shape[0], x.shape[1]))
-        # return self.classifier(x)
-        x = self.layers(x)
+        x = self.prep(x)
+        x = self.cell_block(x)
+        x = self.post(x)
         return x
 

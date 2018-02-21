@@ -15,7 +15,7 @@ import torchvision
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-def make_mnist_dataloaders(root='data', mode='mnist', train_size=1.0, train_batch_size=256, 
+def make_mnist_dataloaders(root='data', mode='mnist', train_size=1.0, train_batch_size=128, 
     eval_batch_size=256, num_workers=8, seed=1111, download=False, pretensor=False, pin_memory=False):
     
     if mode == 'mnist':
