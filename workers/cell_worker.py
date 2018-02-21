@@ -55,7 +55,7 @@ class IdentityLayer(nn.Module):
 
 class ZeroLayer(nn.Module):
     def forward(self, x):
-        return None
+        return x.clone().zero_()
     
     def __repr__(self):
         return "ZeroLayer()"
@@ -75,7 +75,7 @@ class BNConv2d(nn.Module):
     def __repr__(self):
         return 'BN' + self.conv.__repr__()
 
-class BNSepConv2d(nn.Module):
+class BNSepConv2d(BNConv2d):
     def __init__(self, **kwargs):
         assert 'groups' not in kwargs, "BNSepConv2d: cannot specify groups"
         super(BNSepConv2d, self).__init__(**kwargs)
@@ -87,9 +87,17 @@ class BNSepConv2d(nn.Module):
 # --
 # Blocks
 
+"""
+    TODO: 
+        Weight sharing between branches
+"""
+
+
 class CellBlock(nn.Module):
-    def __init__(self, channels, stride=1, num_nodes=2):
+    def __init__(self, channels, stride=1, num_nodes=2, num_branches=2):
         super(CellBlock, self).__init__()
+        
+        self.num_nodes = num_nodes
         
         self.op_fns = OrderedDict([
             ("identity", IdentityLayer),
@@ -98,8 +106,10 @@ class CellBlock(nn.Module):
             ("conv5___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
             ("sepconv3", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)), # depthwise separable
             ("sepconv5", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)), # depthwise separable
-            ("maxpool_", partial(nn.MaxPool2d, stride=stride, kernel_size=3, padding=1)),
-            ("avgpool_", partial(nn.AvgPool2d, stride=stride, kernel_size=3, padding=1)),
+            # >>
+            # ("avgpool_", partial(nn.AvgPool2d, stride=stride, kernel_size=3, padding=1)),
+            # ("maxpool_", partial(nn.MaxPool2d, stride=stride, kernel_size=3, padding=1)),
+            # <<
         ])
         self.op_lookup = dict(zip(range(len(self.op_fns)), self.op_fns.keys()))
         
@@ -117,7 +127,6 @@ class CellBlock(nn.Module):
         # Create pipes
         
         self.pipes = OrderedDict([])
-        num_branches = 2
         
         # !! Should do [data_0, node_1, ..., node_(b+1)] instead
         
@@ -142,8 +151,10 @@ class CellBlock(nn.Module):
         # --
         # Set default architecture
         
+        # [0, 0, 2, 1, 0, 1, 0, 2]
         self._default_pipes = [
             ('data_0', 'node_0', 'conv3___', 0),
+            ('data_0', 'node_0', 'zero____', 1),
             ('node_0', 'node_1', 'conv3___', 0),
             ('data_0', 'node_1', 'identity', 1),
         ]
@@ -224,10 +235,12 @@ class CellBlock(nn.Module):
 
 class CellWorker(basenet.BaseNet):
     
-    def __init__(self, num_classes=10, num_blocks=[2, 2, 2, 2], num_channels=[64, 128, 256, 512]):
+    def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[64, 128, 256, 512], num_nodes=2):
         super(CellWorker, self).__init__()
         
-        self.prep = BNConv2d(in_channels=3, out_channels=64, kernel_size=3, padding=1)
+        self.num_nodes = num_nodes
+        
+        self.prep = BNConv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=3, padding=1)
         
         self.cell_blocks = []
         
@@ -235,7 +248,7 @@ class CellWorker(basenet.BaseNet):
         for i, (block, channels) in enumerate(zip(num_blocks, num_channels)):
             layers = []
             for _ in range(block):
-                cell_block = CellBlock(channels=channels)
+                cell_block = CellBlock(channels=channels, num_nodes=num_nodes)
                 layers.append(cell_block)
                 self.cell_blocks.append(cell_block)
             

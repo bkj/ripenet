@@ -39,6 +39,8 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=123)
     parser.add_argument('--reduce-p-survive', action="store_true")
     
+    parser.add_argument('--architecture', type=str, default='00210102')
+    
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -66,6 +68,11 @@ if __name__ == "__main__":
         weight_decay=5e-4
     )
     # print('worker ->', worker, file=sys.stderr)
+    
+    architecture = np.array(list(map(int, list(args.architecture))))
+    assert len(architecture) == (4 * worker.num_nodes), "len(architecture) != 4 * worker.num_nodes"
+    print('train_cell_worker: worker.set_path(%s)' % args.architecture, file=sys.stderr)
+    worker.set_path(architecture)
     
     # --
     # Run

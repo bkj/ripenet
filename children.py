@@ -6,6 +6,8 @@
 
 import torch
 from tqdm import tqdm
+from collections import Counter
+
 from workers.helpers import InvalidGraphException
 
 from basenet.helpers import to_numpy
@@ -37,16 +39,21 @@ class LoopyDataloader(object):
 
 class Child(object):
     """ Wraps BaseNet model to expose a nice API for ripenet """
-    def __init__(self, worker, dataloaders):
+    def __init__(self, worker, dataloaders, verbose=True):
         self.worker      = worker
         self.dataloaders = dict([(k, LoopyDataloader(v)) for k,v in dataloaders.items()])
         
-        self.train_records = 0
-        self.eval_records  = 0
+        self.records_seen = Counter()
         
-    def train_paths(self, paths, n=1):
-        loader = self.dataloaders['train']
-        for path in paths:
+        self.verbose = verbose
+        
+    def train_paths(self, paths, n=1, mode='train'):
+        loader = self.dataloaders[mode]
+        gen = paths
+        if self.verbose:
+            gen = tqdm(gen, desc='Child.train_paths (%s)' % mode)
+        
+        for path in gen:
             self.worker.set_path(path)
             if self.worker.is_valid:
                 for _ in range(n):
@@ -54,13 +61,17 @@ class Child(object):
                     self.worker.set_progress(loader.progress)
                     _ = self.worker.train_batch(data, target)
                     
-                    self.train_records += data.shape[0]
+                    self.records_seen[mode] += data.shape[0]
     
     def eval_paths(self, paths, n=1, mode='val'):
         rewards = []
         
         loader = self.dataloaders[mode]
-        for path in paths:
+        gen = paths
+        if self.verbose:
+            gen = tqdm(gen, desc='Child.eval_paths (%s)' % mode)
+        
+        for path in gen:
             self.worker.set_path(path)
             if self.worker.is_valid:
                 acc = 0
@@ -69,7 +80,7 @@ class Child(object):
                     output, _ = self.worker.eval_batch(data, target)
                     acc += (to_numpy(output).argmax(axis=1) == to_numpy(target)).mean()
                     
-                    self.eval_records += data.shape[0]
+                    self.records_seen[mode] += data.shape[0]
                     
             else:
                 acc = -0.1
