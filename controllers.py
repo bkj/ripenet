@@ -359,7 +359,7 @@ class MicroLSTMController(Controller, nn.Module):
                 lstm_state = self.lstm_cell(lstm_inputs, lstm_state)
                 logits = decoder(lstm_state[0])
                 
-                logits = prep_logits(logits, temperature=self.temperature, clip_logits=clip_logits)
+                logits = prep_logits(logits, temperature=self.temperature, clip_logits=self.clip_logits)
                 
                 actions, action_log_probs, entropy = sample_softmax(
                     logits=logits,

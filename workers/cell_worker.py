@@ -52,6 +52,7 @@ class Flatten(nn.Module):
     def __repr__(self):
         return "Flatten()"
 
+
 class IdentityLayer(nn.Module):
     def forward(self, x):
         return x
@@ -60,30 +61,33 @@ class IdentityLayer(nn.Module):
         return "IdentityLayer()"
 
 
-class ZeroLayer(nn.Module):
+class NoopLayer(nn.Module):
     def forward(self, x):
-        return x.clone().zero_()
+        return None
     
     def __repr__(self):
-        return "ZeroLayer()"
+        return "NoopLayer()"
 
 
 class BNConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, **kwargs):
+    def __init__(self, in_channels, out_channels, preact=False, **kwargs):
         super(BNConv2d, self).__init__()
         
-        # self.add_module('bn', nn.BatchNorm2d(in_channels))
-        # self.add_module('relu', nn.ReLU())
-        # self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
+        self.preact = preact
         
-        self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
+        # self.add_module('bn', nn.BatchNorm2d(in_channels))
         self.add_module('relu', nn.ReLU())
+        self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
     
     def forward(self, x):
-        return self.conv(self.relu(self.bn(x)))
+        if self.preact:
+            return self.conv(self.relu(self.bn(x)))
+        else:
+            return self.relu(self.conv(x))
     
     def __repr__(self):
         return 'BN' + self.conv.__repr__()
+
 
 class BNSepConv2d(BNConv2d):
     def __init__(self, **kwargs):
@@ -97,11 +101,6 @@ class BNSepConv2d(BNConv2d):
 # --
 # Blocks
 
-"""
-    TODO: 
-        Weight sharing between branches
-"""
-
 
 class CellBlock(nn.Module):
     def __init__(self, channels, stride=1, num_nodes=2, num_branches=2):
@@ -110,16 +109,14 @@ class CellBlock(nn.Module):
         self.num_nodes = num_nodes
         
         self.op_fns = OrderedDict([
-            ("zero____", ZeroLayer),
+            ("noop____", NoopLayer),
             ("identity", IdentityLayer),
-            ("conv3___", partial(nn.Conv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
-            ("conv5___", partial(nn.Conv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
-            # ("sepconv3", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)), # depthwise separable
-            # ("sepconv5", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)), # depthwise separable
-            # >>
-            # ("avgpool_", partial(nn.AvgPool2d, stride=stride, kernel_size=3, padding=1)),
-            # ("maxpool_", partial(nn.MaxPool2d, stride=stride, kernel_size=3, padding=1)),
-            # <<
+            ("conv3___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
+            ("conv5___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
+            ("sepconv3", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
+            ("sepconv5", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
+            ("avgpool_", partial(nn.AvgPool2d, stride=stride, kernel_size=3, padding=1)),
+            ("maxpool_", partial(nn.MaxPool2d, stride=stride, kernel_size=3, padding=1)),
         ])
         self.op_lookup = dict(zip(range(len(self.op_fns)), self.op_fns.keys()))
         
@@ -161,10 +158,9 @@ class CellBlock(nn.Module):
         # --
         # Set default architecture
         
-        # [0, 0, 2, 1, 0, 1, 0, 2]
         self._default_pipes = [
             ('data_0', 'node_0', 'conv3___', 0),
-            ('data_0', 'node_0', 'zero____', 1),
+            ('data_0', 'node_0', 'noop____', 1),
             ('node_0', 'node_1', 'conv3___', 0),
             ('data_0', 'node_1', 'identity', 1),
         ]
@@ -202,6 +198,7 @@ class CellBlock(nn.Module):
         
         # --
         # Gather loose ends for output
+        
         nodes_w_output  = set([k[0] for k in self.graph.keys() if isinstance(k, tuple)])
         nodes_wo_output = [k for k in self.graph.keys() if ('node' in k) and (k not in nodes_w_output)]
         
@@ -228,7 +225,6 @@ class CellBlock(nn.Module):
     
     @property
     def is_valid(self, layer='_output'):
-        # !! I think everything will be valid, because we average loose ends
         return 'data_0' in cull(self.graph, layer)[0]
     
     def forward(self, x, layer='_output'):
@@ -238,6 +234,10 @@ class CellBlock(nn.Module):
         self.graph['data_0'] = x
         out = get(self.graph, layer)
         self.graph['data_0'] = None
+        
+        if out is None:
+            raise InvalidGraphException
+        
         return out
 
 # --
@@ -325,6 +325,7 @@ class MNISTCellWorker(_CellWorker):
             # nn.Conv2d(1, 64, kernel_size=3, padding=1),
             # nn.MaxPool2d(2),
             # nn.ReLU(),
+            
             nn.Conv2d(1, 64, kernel_size=1, padding=0),
             nn.MaxPool2d(2),
         ])

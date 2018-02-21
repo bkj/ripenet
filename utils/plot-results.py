@@ -9,21 +9,34 @@ from matplotlib import pyplot as plt
 array = np.array
 
 all_data = []
-for p in sys.argv[1:]:
-    # try:
-        data = list(map(json.loads, open(p).readlines()))
-        mean_reward = [d['mean_reward'] for d in data]
-        try:
-            controller_step = [d['controller_step'] for d in data]
-        except:
-            controller_step = [d['step'] for d in data]
-        _ = plt.plot(controller_step, mean_reward, label=p, alpha=0.75)
-    # except:
-        # pass
+paths = sorted(sys.argv[1:])
+for p in paths:
+    data = list(map(json.loads, open(p).readlines()))
+    
+    # val
+    sub = [d for d in data if d['mode'] == 'val']
+    mean_reward = [d['mean_reward'] for d in sub]
+    try:
+        controller_step = [d['controller_step'] for d in sub]
+    except:
+        controller_step = [d['step'] for d in sub]
+    
+    _ = plt.plot(controller_step, mean_reward, label=p, alpha=0.25 + 0.75 * (p == paths[-1]))
+    
+    # test
+    sub = [d for d in data if d['mode'] == 'test']
+    mean_reward = [d['mean_reward'] for d in sub]
+    try:
+        controller_step = [d['controller_step'] for d in sub]
+    except:
+        controller_step = [d['step'] for d in sub]
+    
+    _ = plt.plot(controller_step, mean_reward, label=p, alpha=0.25 + 0.75 * (p == paths[-1]))
 
 # _ = plt.legend(loc='lower right')
 _ = plt.xlabel('controller_step')
 _ = plt.ylabel('mean_reward')
-_ = plt.axhline(0.9, c='grey', alpha=0.1)
-_ = plt.axhline(0.95, c='grey', alpha=0.1)
+_ = plt.ylim(0.95, 1.0)
+_ = plt.axhline(0.97, c='grey', alpha=0.1)
+_ = plt.axhline(0.99, c='grey', alpha=0.1)
 show_plot()

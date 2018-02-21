@@ -18,7 +18,7 @@ from torch.autograd import Variable
 
 from controllers import MicroLSTMController
 from children import LazyChild, Child
-from workers import CellWorker
+from workers import CellWorker, MNISTCellWorker
 from data import make_cifar_dataloaders, make_mnist_dataloaders
 from logger import Logger
 
@@ -42,16 +42,17 @@ def parse_args():
     parser.add_argument('--child-train-paths-per-epoch', type=int, default=200) # Number of paths to use to train child network each epoch
     parser.add_argument('--controller-train-steps-per-epoch', type=int, default=5)   # Number of times to call RL step on controller per epoch
     parser.add_argument('--controller-train-paths-per-step', type=int, default=40)  # Number of paths to use to train controller per step
-    parser.add_argument('--controller-eval-paths-per-epoch',   type=int, default=100) # Number of paths to sample to quantify performance
+    parser.add_argument('--controller-eval-paths-per-epoch', type=int, default=100) # Number of paths to sample to quantify performance
+    parser.add_argument('--test-topk', action="store_true") # Number of paths to sample to quantify performance
     
     parser.add_argument('--num-ops', type=int, default=6)     # Number of ops to sample
-    parser.add_argument('--num-cells', type=int, default=2)     # Number of cells to sample
+    parser.add_argument('--num-nodes', type=int, default=2)     # Number of cells to sample
     
     parser.add_argument('--temperature', type=float, default=1)     # Temperature for logit -- higher means more entropy 
     parser.add_argument('--entropy-penalty', type=float, default=0.0)   # Penalize entropy 
     
     parser.add_argument('--controller-lr', type=float, default=0.001)
-    parser.add_argument('--child-lr', type=float, default=0.1)
+    parser.add_argument('--child-lr-init', type=float, default=0.1)
     
     parser.add_argument('--train-size', type=float, default=0.9)     # Proportion of training data to use for training (vs validation) 
     parser.add_argument('--pretrained-path', type=str, default=None)
@@ -75,7 +76,7 @@ if __name__ == "__main__":
 
     controller_kwargs = {
         "input_dim" : state_dim,
-        "output_length" : args.num_cells,
+        "output_length" : args.num_nodes,
         "output_channels" : args.num_ops,
         "temperature" : args.temperature,
         "opt_params" : {
@@ -99,7 +100,7 @@ if __name__ == "__main__":
 
     # --
     # Worker
-
+    
     if args.dataset == 'cifar10':
         worker = CellWorker(num_nodes=args.num_nodes).cuda()
     elif 'mnist' in args.dataset:
@@ -124,7 +125,7 @@ if __name__ == "__main__":
         worker.init_optimizer(
             opt=torch.optim.SGD,
             params=worker.parameters(),
-            lr=args.child_lr,
+            lr=args.child_lr_init,
             momentum=0.9,
             weight_decay=5e-4
         )
@@ -175,8 +176,13 @@ if __name__ == "__main__":
         
         states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
         actions, log_probs, entropies = controller(states)
-        rewards = child.eval_paths(actions, mode='test')
-        
+        if args.test_topk:
+            K = 10
+            topk_idx = child.eval_paths(actions, n=5, mode='val').squeeze().topk(K)[1]
+            rewards = child.eval_paths(actions[topk_idx], mode='test')
+        else:
+            rewards = child.eval_paths(actions, mode='test')
+            
         logger.log(total_controller_steps, child, rewards, actions, mode='test')
 
     logger.close()

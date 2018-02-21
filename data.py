@@ -100,7 +100,7 @@ def _make_loaders(trainset, testset, train_size, train_batch_size, eval_batch_si
     
     testloader = torch.utils.data.DataLoader(
         testset, batch_size=eval_batch_size, num_workers=num_workers, pin_memory=pin_memory,
-        shuffle=False,
+        shuffle=True,
     )
     
     return {
