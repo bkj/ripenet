@@ -63,7 +63,7 @@ class IdentityLayer(nn.Module):
 
 class NoopLayer(nn.Module):
     def forward(self, x):
-        return None
+        return x.clone().zero_()
     
     def __repr__(self):
         return "NoopLayer()"
@@ -202,7 +202,7 @@ class CellBlock(nn.Module):
         nodes_w_output  = set([k[0] for k in self.graph.keys() if isinstance(k, tuple)])
         nodes_wo_output = [k for k in self.graph.keys() if ('node' in k) and (k not in nodes_w_output)]
         
-        self.graph['_output'] = (Accumulator(name='_output'), nodes_wo_output) # May want to sum/avg/concat
+        self.graph['_output'] = (Accumulator(name='_output', agg_fn=torch.mean), nodes_wo_output) # May want to sum/avg/concat
     
     def set_path(self, path):
         path = to_numpy(path).reshape(-1, 4)

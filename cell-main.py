@@ -39,11 +39,13 @@ def parse_args():
     parser.add_argument('--algorithm', type=str, default='ppo', choices=['reinforce', 'ppo'])
     
     parser.add_argument('--epochs', type=int, default=20)  #
-    parser.add_argument('--child-train-paths-per-epoch', type=int, default=200) # Number of paths to use to train child network each epoch
-    parser.add_argument('--controller-train-steps-per-epoch', type=int, default=5)   # Number of times to call RL step on controller per epoch
+    parser.add_argument('--child-train-paths-per-epoch', type=int, default=200)     # Number of paths to use to train child network each epoch
+    parser.add_argument('--controller-train-steps-per-epoch', type=int, default=5)  # Number of times to call RL step on controller per epoch
     parser.add_argument('--controller-train-paths-per-step', type=int, default=40)  # Number of paths to use to train controller per step
-    parser.add_argument('--controller-eval-paths-per-epoch', type=int, default=100) # Number of paths to sample to quantify performance
-    parser.add_argument('--test-topk', action="store_true") # Number of paths to sample to quantify performance
+    parser.add_argument('--controller-eval-paths-per-epoch', type=int, default=200) # Number of paths to sample to quantify performance
+    parser.add_argument('--controller-eval-interval', type=int, default=5)          # Number of paths to sample to quantify performance
+    
+    parser.add_argument('--test-topk', type=int, default=-1) # Number of paths to sample to quantify performance
     
     parser.add_argument('--num-ops', type=int, default=6)     # Number of ops to sample
     parser.add_argument('--num-nodes', type=int, default=2)     # Number of cells to sample
@@ -133,14 +135,13 @@ if __name__ == "__main__":
         child = Child(worker=worker, dataloaders=dataloaders)
     else:
         raise Exception('main.py: unknown child %s' % args.child, file=sys.stderr)
-
-
+        
     # --
     # Run
-
+    
     total_controller_steps = 0
     logger = Logger(args.outpath)
-
+    
     for epoch in range(args.epochs):
         print(('epoch=%d ' % epoch) + ('-' * 50), file=sys.stderr)
         
@@ -174,15 +175,16 @@ if __name__ == "__main__":
         # --
         # Eval best architecture on test set
         
-        states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
-        actions, log_probs, entropies = controller(states)
-        if args.test_topk:
-            K = 10
-            topk_idx = child.eval_paths(actions, n=5, mode='val').squeeze().topk(K)[1]
-            rewards = child.eval_paths(actions[topk_idx], mode='test')
-        else:
-            rewards = child.eval_paths(actions, mode='test')
-            
-        logger.log(total_controller_steps, child, rewards, actions, mode='test')
+        if not (epoch + 1) % args.controller_eval_interval:
+            states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
+            actions, log_probs, entropies = controller(states)
+            if args.test_topk > 0:
+                N = 3
+                topk_idx = child.eval_paths(actions, n=N, mode='val').squeeze().topk(args.test_topk)[1]
+                rewards  = child.eval_paths(actions[topk_idx], mode='test')
+            else:
+                rewards = child.eval_paths(actions, mode='test')
+                
+            logger.log(total_controller_steps, child, rewards, actions, mode='test')
 
     logger.close()
