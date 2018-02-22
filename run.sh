@@ -83,17 +83,80 @@ done;
 
 # # 500 epochs, converges to a null cell
 
-# --
+# ====================================================================
+# fashionMNIST + MNIST
+
 # Training on fashionMNIST
 
+mkdir -p _results/fashion
+mkdir -p _results/fashion/pretrained
+
+# --
+# Pretraining
+
+ARCH="0001" # Identity cell
+DATASET="mnist"
+python tests/train_cell_worker.py \
+    --dataset $DATASET \
+    --outpath _results/fashion/pretrained/$DATASET-$ARCH-1x1 \
+    --architecture $ARCH \
+    --lr-schedule linear \
+    --epochs 20 \
+    --train-size 1.0 \
+    --lr-init 0.01 \
+    --num-nodes 1
+
+
+ARCH="0002_0002" # Two convolutions
+DATASET="mnist"
+python tests/train_cell_worker.py \
+    --dataset $DATASET \
+    --outpath _results/fashion/pretrained/$DATASET-$ARCH \
+    --architecture $ARCH \
+    --lr-schedule constant \
+    --epochs 100 \
+    --train-size 0.9 \
+    --lr-init 0.01 \
+    --num-nodes 2
+
+
+
+
+# --
+# PPO Training
+
 iter=0
-mkdir _results/fashion
+DATASET="mnist"
 python cell-main.py \
+    --dataset $DATASET \
     --algorithm ppo \
-    --outpath _results/fashion/trained.$iter \
-    --dataset fashion_mnist \
+    --outpath _results/fashion/$DATASET-trained.$iter \
+    --child child \
+    --train-size 0.9 \
+    --num-ops 4 \
+    --num-nodes 1 \
+    --child-lr-init 0.01 \
+    --epochs 1000
+
+# Seems to work
+
+iter=9
+DATASET="mnist"
+python cell-main.py \
+    --dataset $DATASET \
+    --algorithm ppo \
+    --outpath _results/fashion/$DATASET-trained.$iter \
+    --child child \
+    --train-size 0.9 \
     --num-ops 6 \
-    --temperature 2.5 \
+    --num-nodes 3 \
+    --child-lr-init 0.01 \
     --epochs 1000 \
-    --controller-lr 0.00035 \
-    --child child
+    --test-topk 10
+
+# !! Tweak MNIST model to give very good performance at baseline
+# !! SGDR
+# !! FashionMNIST
+
+
+

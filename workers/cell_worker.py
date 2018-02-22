@@ -186,7 +186,9 @@ class CellBlock(nn.Module):
         
         self.graph = OrderedDict([('data_0',   None)])
         for node_name, node in self.nodes.items():
-            node_inputs = [pipe_name for pipe_name, pipe in self.pipes.items() if (pipe_name[1] == node_name) and (pipe.active)]
+            node_inputs = [pipe_name for pipe_name, pipe in self.pipes.items() 
+                if (pipe_name[1] == node_name) and (pipe.active)]
+            
             self.graph[node_name] = (node, node_inputs)
         
         # --
@@ -322,15 +324,11 @@ class MNISTCellWorker(_CellWorker):
         self.num_nodes = num_nodes
         
         self.prep = nn.Sequential(*[
-            # nn.Conv2d(1, 64, kernel_size=3, padding=1),
-            # nn.MaxPool2d(2),
-            # nn.ReLU(),
-            
-            nn.Conv2d(1, 64, kernel_size=1, padding=0),
+            nn.Conv2d(1, 64, kernel_size=3, padding=1),
             nn.MaxPool2d(2),
+            nn.ReLU(),
         ])
         
-        # num_branches=1, architecture="0002"
         self.cell_block = CellBlock(channels=64, num_nodes=num_nodes, num_branches=num_branches)
         self.cell_blocks = [self.cell_block]
         

@@ -7,6 +7,7 @@
 import os
 import sys
 import json
+import atexit
 import argparse
 import numpy as np
 from collections import OrderedDict
@@ -39,9 +40,9 @@ def parse_args():
     parser.add_argument('--algorithm', type=str, default='ppo', choices=['reinforce', 'ppo'])
     
     parser.add_argument('--epochs', type=int, default=20)  #
-    parser.add_argument('--child-train-paths-per-epoch', type=int, default=200)     # Number of paths to use to train child network each epoch
-    parser.add_argument('--controller-train-steps-per-epoch', type=int, default=5)  # Number of times to call RL step on controller per epoch
-    parser.add_argument('--controller-train-paths-per-step', type=int, default=40)  # Number of paths to use to train controller per step
+    parser.add_argument('--child-train-paths-per-epoch', type=int, default=400)     # Number of paths to use to train child network each epoch
+    parser.add_argument('--controller-train-steps-per-epoch', type=int, default=2)  # Number of times to call RL step on controller per epoch
+    parser.add_argument('--controller-train-paths-per-step', type=int, default=80)  # Number of paths to use to train controller per step
     parser.add_argument('--controller-eval-paths-per-epoch', type=int, default=200) # Number of paths to sample to quantify performance
     parser.add_argument('--controller-eval-interval', type=int, default=5)          # Number of paths to sample to quantify performance
     
@@ -114,8 +115,13 @@ if __name__ == "__main__":
     if args.pretrained_path is not None:
         print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
         worker.load_state_dict(torch.load(args.pretrained_path))
-        
-        
+    
+    # Save model on exit
+    def save():
+        worker.save(args.outpath + '.weights')
+    
+    atexit.register(save)
+    
     # --
     # Child
     
@@ -124,9 +130,13 @@ if __name__ == "__main__":
     if args.child == 'lazy_child':
         child = LazyChild(worker=worker, dataloaders=dataloaders)
     elif args.child == 'child':
+        # >>
+        params = worker.parameters()
+        # params = worker.cell_block.parameters()
+        # <<
         worker.init_optimizer(
             opt=torch.optim.SGD,
-            params=worker.parameters(),
+            params=params,
             lr=args.child_lr_init,
             momentum=0.9,
             weight_decay=5e-4
@@ -186,5 +196,5 @@ if __name__ == "__main__":
                 rewards = child.eval_paths(actions, mode='test')
                 
             logger.log(total_controller_steps, child, rewards, actions, mode='test')
-
+    
     logger.close()

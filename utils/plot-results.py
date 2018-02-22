@@ -37,7 +37,9 @@ for p in paths:
 _ = plt.xlabel('controller_step')
 _ = plt.ylabel('mean_reward')
 _ = plt.ylim(0.95, 1.0)
-_ = plt.xlim(0, 300)
-_ = plt.axhline(0.97, c='grey', alpha=0.1)
-_ = plt.axhline(0.99, c='grey', alpha=0.1)
+_ = plt.xlim(0, 500)
+
+for i in np.linspace(0.95, 1.0, 6):
+    _ = plt.axhline(i, c='grey', alpha=0.1)
+
 show_plot()
