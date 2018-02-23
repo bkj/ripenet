@@ -57,31 +57,39 @@ done;
 # --
 # Training a model w/ cell search
 
-# mkdir _results/trained
-# iter=0
-# python cell-main.py \
-#     --algorithm ppo \
-#     --outpath _results/trained/trained.$iter \
-#     --num-ops 6 \
-#     --temperature 2.5 \
-#     --entropy-penalty 0.1 \
-#     --epochs 1000 \
-#     --controller-lr 0.00035 \
-#     --child child \
-#     --pretrained-path pretrained_models/cell_worker-00000000
+
+mkdir _results/trained
+iter=0
+python cell-main.py \
+    --dataset cifar10 \
+    --child child \
+    --algorithm ppo \
+    --outpath _results/trained/trained.$iter \
+    --epochs 1000 \
+    --num-ops 3 \
+    --child-lr-init 0.001
 
 
-# iter=1
-# python cell-main.py \
-#     --algorithm ppo \
-#     --outpath _results/trained/trained.$iter \
-#     --num-ops 6 \
-#     --temperature 2.5 \
-#     --epochs 1000 \
-#     --controller-lr 0.00035 \
-#     --child child
 
-# # 500 epochs, converges to a null cell
+mkdir _results/trained
+iter=0
+python cell-main.py \
+    --dataset cifar10 \
+    --child child \
+    --algorithm ppo \
+    --outpath _results/trained/trained.$iter \
+    --epochs 1000 \
+    --num-ops 3 \
+    --temperature 5.0 \
+    --clip-logits 2.5 \
+    --entropy-penalty 0.1 \
+    --controller-lr 0.00035 \
+    --child-lr-init 0.05 \
+    --child-lr-schedule sgdr \
+    --child-sgdr-period-length 10 \
+    --child-sgdr-t-mult 2
+
+# !! Excluding pooling operations, since they seem to be causing trouble
 
 # ====================================================================
 # fashionMNIST + MNIST

@@ -4,6 +4,9 @@
     children.py
 """
 
+from __future__ import division
+
+import sys
 import torch
 from tqdm import tqdm
 from collections import Counter
@@ -40,30 +43,38 @@ class LoopyDataloader(object):
 class Child(object):
     """ Wraps BaseNet model to expose a nice API for ripenet """
     def __init__(self, worker, dataloaders, verbose=True):
-        self.worker      = worker
-        self.dataloaders = dict([(k, LoopyDataloader(v)) for k,v in dataloaders.items()])
-        
+        self.worker       = worker
+        self.dataloaders  = dict([(k, LoopyDataloader(v)) for k,v in dataloaders.items()])
         self.records_seen = Counter()
-        
-        self.verbose = verbose
+        self.verbose      = verbose
         
     def train_paths(self, paths, n=1, mode='train'):
+        self.worker.reset_pipes()
+        
         loader = self.dataloaders[mode]
         gen = paths
         if self.verbose:
             gen = tqdm(gen, desc='Child.train_paths (%s)' % mode)
         
+        correct, total = 0, 0
         for path in gen:
             self.worker.set_path(path)
             if self.worker.is_valid:
                 for _ in range(n):
                     data, target = next(loader)
                     self.worker.set_progress(loader.progress)
-                    _ = self.worker.train_batch(data, target)
+                    output, loss = self.worker.train_batch(data, target)
+                    
+                    if self.verbose:
+                        correct += (to_numpy(output).argmax(axis=1) == to_numpy(target)).sum()
+                        total += data.shape[0]
+                        gen.set_postfix({'acc' : correct / total, "loss" : loss})
                     
                     self.records_seen[mode] += data.shape[0]
     
     def eval_paths(self, paths, n=1, mode='val'):
+        self.worker.reset_pipes()
+        
         rewards = []
         
         loader = self.dataloaders[mode]
@@ -71,6 +82,7 @@ class Child(object):
         if self.verbose:
             gen = tqdm(gen, desc='Child.eval_paths (%s)' % mode)
         
+        correct, total = 0, 0
         for path in gen:
             self.worker.set_path(path)
             if self.worker.is_valid:
@@ -78,6 +90,12 @@ class Child(object):
                 for _ in range(n):
                     data, target = next(loader)
                     output, _ = self.worker.eval_batch(data, target)
+                    
+                    if self.verbose:
+                        correct += (to_numpy(output).argmax(axis=1) == to_numpy(target)).sum()
+                        total += data.shape[0]
+                        gen.set_postfix({"acc" : correct / total})
+                    
                     acc += (to_numpy(output).argmax(axis=1) == to_numpy(target)).mean()
                     
                     self.records_seen[mode] += data.shape[0]

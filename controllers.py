@@ -103,6 +103,7 @@ class Controller(object):
             loss -= entropy_penalty * entropies.sum()
         
         loss.backward()
+        # torch.nn.utils.clip_grad_norm(self.parameters(), 40) # !! Is this a reasonable value?
         self.opt.step()
     
     def ppo_step(self, rewards, states, actions, entropy_penalty=0.0, clip_eps=0.2, ppo_epochs=4):
@@ -132,6 +133,7 @@ class Controller(object):
             loss -= entropy_penalty * entropies.sum()
             
             loss.backward()
+            # torch.nn.utils.clip_grad_norm(self.parameters(), 40) # !! Is this a reasonable value?
             self.opt.step()
 
 # --

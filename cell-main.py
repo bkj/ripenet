@@ -24,6 +24,7 @@ from data import make_cifar_dataloaders, make_mnist_dataloaders
 from logger import Logger
 
 from basenet.helpers import to_numpy, set_seeds
+from basenet.lr import LRSchedule
 
 np.set_printoptions(linewidth=120)
 
@@ -40,10 +41,10 @@ def parse_args():
     parser.add_argument('--algorithm', type=str, default='ppo', choices=['reinforce', 'ppo'])
     
     parser.add_argument('--epochs', type=int, default=20)  #
-    parser.add_argument('--child-train-paths-per-epoch', type=int, default=400)     # Number of paths to use to train child network each epoch
-    parser.add_argument('--controller-train-steps-per-epoch', type=int, default=2)  # Number of times to call RL step on controller per epoch
-    parser.add_argument('--controller-train-paths-per-step', type=int, default=80)  # Number of paths to use to train controller per step
-    parser.add_argument('--controller-eval-paths-per-epoch', type=int, default=200) # Number of paths to sample to quantify performance
+    parser.add_argument('--child-train-paths-per-epoch', type=int, default=352)     # Number of paths to use to train child network each epoch
+    parser.add_argument('--controller-train-steps-per-epoch', type=int, default=4)  # Number of times to call RL step on controller per epoch
+    parser.add_argument('--controller-train-paths-per-step', type=int, default=50)  # Number of paths to use to train controller per step
+    parser.add_argument('--controller-eval-paths-per-epoch', type=int, default=100) # Number of paths to sample to quantify performance
     parser.add_argument('--controller-eval-interval', type=int, default=5)          # Number of paths to sample to quantify performance
     
     parser.add_argument('--test-topk', type=int, default=-1) # Number of paths to sample to quantify performance
@@ -51,11 +52,17 @@ def parse_args():
     parser.add_argument('--num-ops', type=int, default=6)     # Number of ops to sample
     parser.add_argument('--num-nodes', type=int, default=2)     # Number of cells to sample
     
-    parser.add_argument('--temperature', type=float, default=1)     # Temperature for logit -- higher means more entropy 
-    parser.add_argument('--entropy-penalty', type=float, default=0.0)   # Penalize entropy 
+    parser.add_argument('--temperature', type=float, default=1)       # Temperature for logit -- higher means more entropy 
+    parser.add_argument('--clip-logits', type=float, default=-1)      # Clip logits
+    parser.add_argument('--entropy-penalty', type=float, default=0.0) # Penalize entropy 
     
     parser.add_argument('--controller-lr', type=float, default=0.001)
-    parser.add_argument('--child-lr-init', type=float, default=0.1)
+    
+    parser.add_argument('--child-lr-init', type=float, default=0.05)
+    parser.add_argument('--child-lr-schedule', type=str, default='constant')
+    parser.add_argument('--child-lr-epochs', type=int, default=1000)
+    parser.add_argument('--child-sgdr-period-length', type=float, default=10)
+    parser.add_argument('--child-sgdr-t-mult',  type=float, default=2)
     
     parser.add_argument('--train-size', type=float, default=0.9)     # Proportion of training data to use for training (vs validation) 
     parser.add_argument('--pretrained-path', type=str, default=None)
@@ -73,25 +80,10 @@ if __name__ == "__main__":
     set_seeds(args.seed)
     
     json.dump(vars(args), open(args.outpath + '.config', 'w'))
-
-    # --
-    # Controller
-
-    controller_kwargs = {
-        "input_dim" : state_dim,
-        "output_length" : args.num_nodes,
-        "output_channels" : args.num_ops,
-        "temperature" : args.temperature,
-        "opt_params" : {
-            "lr" : args.controller_lr,
-        }
-    }
-
-    controller = MicroLSTMController(**controller_kwargs)
-
+    
     # --
     # IO
-
+    
     if args.dataset == 'cifar10':
         print('train_cell_worker: make_cifar_dataloaders', file=sys.stderr)
         dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed)
@@ -100,15 +92,31 @@ if __name__ == "__main__":
         dataloaders = make_mnist_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pretensor=True, mode=args.dataset)
     else:
         raise Exception()
-
+    
+    # --
+    # Controller
+    
+    controller = MicroLSTMController(**{
+        "input_dim" : state_dim,
+        "output_length" : args.num_nodes,
+        "output_channels" : args.num_ops,
+        "temperature" : args.temperature,
+        "clip_logits" : args.clip_logits,
+        "opt_params" : {
+            "lr" : args.controller_lr,
+        }
+    })
+    
     # --
     # Worker
     
     if args.dataset == 'cifar10':
         worker = CellWorker(num_nodes=args.num_nodes).cuda()
+        # print(worker, file=sys.stderr)
     elif 'mnist' in args.dataset:
         # worker = CellWorker(input_channels=1, num_blocks=[1, 1, 1], num_channels=[16, 32, 64], num_nodes=args.num_nodes).cuda()
-        worker = MNISTCellWorker(num_nodes=args.num_nodes).cuda()
+        # worker = MNISTCellWorker(num_nodes=args.num_nodes).cuda()
+        pass
     else:
         raise Exception()
         
@@ -122,6 +130,8 @@ if __name__ == "__main__":
     
     atexit.register(save)
     
+    print("pipes ->", worker.get_pipes()[0], file=sys.stderr)
+    
     # --
     # Child
     
@@ -130,16 +140,19 @@ if __name__ == "__main__":
     if args.child == 'lazy_child':
         child = LazyChild(worker=worker, dataloaders=dataloaders)
     elif args.child == 'child':
-        # >>
-        params = worker.parameters()
-        # params = worker.cell_block.parameters()
-        # <<
+        lr_scheduler = getattr(LRSchedule, args.child_lr_schedule)(
+            lr_init=args.child_lr_init,
+            epochs=args.child_lr_epochs,
+            period_length=args.child_sgdr_period_length,
+            t_mult=args.child_sgdr_t_mult,
+        )
+        print(lr_scheduler(0), file=sys.stderr)
         worker.init_optimizer(
             opt=torch.optim.SGD,
-            params=params,
-            lr=args.child_lr_init,
+            params=worker.parameters(),
+            lr_scheduler=lr_scheduler,
             momentum=0.9,
-            weight_decay=5e-4
+            weight_decay=1e-4
         )
         
         child = Child(worker=worker, dataloaders=dataloaders)

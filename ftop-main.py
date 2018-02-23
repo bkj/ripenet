@@ -78,7 +78,7 @@ if __name__ == "__main__":
 
     controller_kwargs = {
         "input_dim" : state_dim,
-        "output_length" : args.num_nodes,
+        "output_length" : args.num_nodes * 2,
         "output_channels" : args.num_ops,
         "temperature" : args.temperature,
         "opt_params" : {

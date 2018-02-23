@@ -75,7 +75,7 @@ class BNConv2d(nn.Module):
         
         self.preact = preact
         
-        # self.add_module('bn', nn.BatchNorm2d(in_channels))
+        self.add_module('bn', nn.BatchNorm2d(in_channels))
         self.add_module('relu', nn.ReLU())
         self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
     
@@ -108,12 +108,14 @@ class CellBlock(nn.Module):
         self.num_nodes = num_nodes
         
         self.op_fns = OrderedDict([
-            ("noop____", NoopLayer),
+            # >>
+            # ("noop____", NoopLayer),
+            # <<
             ("identity", IdentityLayer),
-            ("conv3___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
-            ("conv5___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
-            ("sepconv3", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
-            ("sepconv5", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
+            ("conv3___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1, preact=True)),
+            ("conv5___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2, preact=True)),
+            ("sepconv3", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1, preact=True)),
+            ("sepconv5", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2, preact=True)),
             ("avgpool_", partial(nn.AvgPool2d, stride=stride, kernel_size=3, padding=1)),
             ("maxpool_", partial(nn.MaxPool2d, stride=stride, kernel_size=3, padding=1)),
         ])
@@ -133,8 +135,6 @@ class CellBlock(nn.Module):
         # Create pipes
         
         self.pipes = OrderedDict([])
-        
-        # !! Should do [data_0, node_1, ..., node_(b+1)] instead
         
         # Add pipes from input data to all nodes
         for trg_id in range(num_nodes):
@@ -159,7 +159,10 @@ class CellBlock(nn.Module):
         
         self._default_pipes = [
             ('data_0', 'node_0', 'conv3___', 0),
-            ('data_0', 'node_0', 'noop____', 1),
+            # <<
+            # ('data_0', 'node_0', 'noop____', 1),
+            ('data_0', 'node_0', 'identity', 1),
+            # >>
             ('node_0', 'node_1', 'conv3___', 0),
             ('data_0', 'node_1', 'identity', 1),
         ]
@@ -296,7 +299,6 @@ class CellWorker(_CellWorker):
             all_layers.append(nn.Sequential(*layers))
             
             if (i + 1) < len(num_blocks):
-                # Spatial downsampling
                 all_layers.append(BNConv2d(in_channels=channels, out_channels=num_channels[i + 1], kernel_size=3, padding=1, stride=2))
         
         self.layers = nn.Sequential(*all_layers)
@@ -312,6 +314,8 @@ class CellWorker(_CellWorker):
         x = x.view((x.shape[0], x.shape[1]))
         return x
 
+# >>
+# MNIST
 
 class MNISTCellWorker(_CellWorker):
     def __init__(self, num_classes=10, input_channels=1, channels=64, num_nodes=2, num_branches=2):
@@ -345,6 +349,8 @@ class MNISTCellWorker(_CellWorker):
         x = self.cell_block(x)
         x = self.post(x)
         return x
+
+# <<
 
 # >>
 # FTOP
@@ -436,7 +442,6 @@ class FTopWorker(_CellWorker):
         ])
         
         self.cell_block = FTopBlock(channels=64, num_nodes=num_nodes, num_branches=num_branches)
-        # self.cell_block = nn.Conv2d(32, 64, kernel_size=5, padding=2)
         self.cell_blocks = [self.cell_block]
         
         self.post = nn.Sequential(*[
@@ -455,5 +460,9 @@ class FTopWorker(_CellWorker):
         x = self.cell_block(x)
         x = self.post(x)
         return x
+    
+    @property
+    def is_valid(self):
+        return True
 
 # <<
