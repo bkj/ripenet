@@ -98,9 +98,7 @@ if __name__ == "__main__":
     print('train_cell_worker: worker.set_path(%s)' % args.architecture, file=sys.stderr)
     worker.set_path(architecture)
     
-    print('pipes ->', file=sys.stderr)
     cell_pipes = worker.get_pipes()[0]
-    print(cell_pipes)
     config = vars(args)
     config['_pipes'] = cell_pipes
     json.dump(config, open(args.outpath + '.config', 'w'))

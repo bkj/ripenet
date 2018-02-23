@@ -70,20 +70,14 @@ class NoopLayer(nn.Module):
 
 
 class BNConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, preact=False, **kwargs):
+    def __init__(self, in_channels, out_channels, **kwargs):
         super(BNConv2d, self).__init__()
-        
-        self.preact = preact
-        
         self.add_module('bn', nn.BatchNorm2d(in_channels))
         self.add_module('relu', nn.ReLU())
         self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
     
     def forward(self, x):
-        if self.preact:
-            return self.conv(self.relu(self.bn(x)))
-        else:
-            return self.relu(self.conv(x))
+        return self.conv(self.relu(self.bn(x)))
     
     def __repr__(self):
         return 'BN' + self.conv.__repr__()
@@ -92,6 +86,7 @@ class BNConv2d(nn.Module):
 class BNSepConv2d(BNConv2d):
     def __init__(self, **kwargs):
         assert 'groups' not in kwargs, "BNSepConv2d: cannot specify groups"
+        kwargs['groups'] = kwargs['in_channels']
         super(BNSepConv2d, self).__init__(**kwargs)
     
     def __repr__(self):
@@ -109,13 +104,13 @@ class CellBlock(nn.Module):
         
         self.op_fns = OrderedDict([
             # >>
-            # ("noop____", NoopLayer),
+            ("noop____", NoopLayer),
             # <<
             ("identity", IdentityLayer),
-            ("conv3___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1, preact=True)),
-            ("conv5___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2, preact=True)),
-            ("sepconv3", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1, preact=True)),
-            ("sepconv5", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2, preact=True)),
+            ("conv3___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
+            ("conv5___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
+            ("sepconv3", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
+            ("sepconv5", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
             ("avgpool_", partial(nn.AvgPool2d, stride=stride, kernel_size=3, padding=1)),
             ("maxpool_", partial(nn.MaxPool2d, stride=stride, kernel_size=3, padding=1)),
         ])
@@ -157,14 +152,13 @@ class CellBlock(nn.Module):
         # --
         # Set default architecture
         
+        # 00210102
         self._default_pipes = [
             ('data_0', 'node_0', 'conv3___', 0),
-            # <<
-            # ('data_0', 'node_0', 'noop____', 1),
             ('data_0', 'node_0', 'identity', 1),
-            # >>
-            ('node_0', 'node_1', 'conv3___', 0),
-            ('data_0', 'node_1', 'identity', 1),
+            ('data_0', 'node_1', 'noop____', 0),
+            ('node_0', 'node_1', 'conv3___', 1),
+            
         ]
         self.reset_pipes()
     

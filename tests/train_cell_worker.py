@@ -75,7 +75,8 @@ if __name__ == "__main__":
         worker = CellWorker(num_nodes=args.num_nodes).cuda()
     elif 'mnist' in args.dataset:
         # worker = CellWorker(input_channels=1, num_blocks=[1, 1, 1], num_channels=[16, 32, 64], num_nodes=args.num_nodes).cuda()
-        worker = MNISTCellWorker(num_nodes=args.num_nodes).cuda()
+        # worker = MNISTCellWorker(num_nodes=args.num_nodes).cuda()
+        pass
     else:
         raise Exception()
         
@@ -103,13 +104,10 @@ if __name__ == "__main__":
     print('train_cell_worker: worker.set_path(%s)' % args.architecture, file=sys.stderr)
     worker.set_path(architecture)
     
-    # print('pipes ->', file=sys.stderr)
-    # cell_pipes = worker.get_pipes()[0]
-    # for pipe in cell_pipes:
-    #     print(pipe, file=sys.stderr)
-    
+    cell_pipes = worker.get_pipes()[0]
     config = vars(args)
-    # config['_pipes'] = cell_pipes
+    print('pipes ->', cell_pipes, file=sys.stderr)
+    config['_pipes'] = cell_pipes
     json.dump(config, open(args.outpath + '.config', 'w'))
     
     # --

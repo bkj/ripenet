@@ -58,7 +58,7 @@ class Child(object):
         
         correct, total = 0, 0
         for path in gen:
-            self.worker.set_path(path)
+            # self.worker.set_path(path)
             if self.worker.is_valid:
                 for _ in range(n):
                     data, target = next(loader)
@@ -84,7 +84,7 @@ class Child(object):
         
         correct, total = 0, 0
         for path in gen:
-            self.worker.set_path(path)
+            # self.worker.set_path(path)
             if self.worker.is_valid:
                 acc = 0
                 for _ in range(n):

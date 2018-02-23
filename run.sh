@@ -58,36 +58,38 @@ done;
 # Training a model w/ cell search
 
 
-mkdir _results/trained
-iter=0
-python cell-main.py \
-    --dataset cifar10 \
-    --child child \
-    --algorithm ppo \
-    --outpath _results/trained/trained.$iter \
-    --epochs 1000 \
-    --num-ops 3 \
-    --child-lr-init 0.001
-
+python tests/train_cell_worker.py \
+    --lr-schedule constant \
+    --lr-init 0.1 \
+    --outpath delete-me
 
 
 mkdir _results/trained
 iter=0
 python cell-main.py \
-    --dataset cifar10 \
     --child child \
-    --algorithm ppo \
     --outpath _results/trained/trained.$iter \
-    --epochs 1000 \
-    --num-ops 3 \
-    --temperature 5.0 \
-    --clip-logits 2.5 \
-    --entropy-penalty 0.1 \
-    --controller-lr 0.00035 \
-    --child-lr-init 0.05 \
-    --child-lr-schedule sgdr \
-    --child-sgdr-period-length 10 \
-    --child-sgdr-t-mult 2
+    --child-lr-init 0.1
+
+# Works if children don't control path
+
+# mkdir _results/trained
+# iter=0
+# python cell-main.py \
+#     --dataset cifar10 \
+#     --child child \
+#     --algorithm ppo \
+#     --outpath _results/trained/trained.$iter \
+#     --epochs 1000 \
+#     --num-ops 3 \
+#     --temperature 5.0 \
+#     --clip-logits 2.5 \
+#     --entropy-penalty 0.1 \
+#     --controller-lr 0.00035 \
+#     --child-lr-init 0.05 \
+#     --child-lr-schedule sgdr \
+#     --child-sgdr-period-length 10 \
+#     --child-sgdr-t-mult 2
 
 # !! Excluding pooling operations, since they seem to be causing trouble
 

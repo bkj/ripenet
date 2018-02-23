@@ -58,7 +58,7 @@ def parse_args():
     
     parser.add_argument('--controller-lr', type=float, default=0.001)
     
-    parser.add_argument('--child-lr-init', type=float, default=0.05)
+    parser.add_argument('--child-lr-init', type=float, default=0.1)
     parser.add_argument('--child-lr-schedule', type=str, default='constant')
     parser.add_argument('--child-lr-epochs', type=int, default=1000)
     parser.add_argument('--child-sgdr-period-length', type=float, default=10)
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     
     if args.dataset == 'cifar10':
         worker = CellWorker(num_nodes=args.num_nodes).cuda()
-        # print(worker, file=sys.stderr)
+        print(worker, file=sys.stderr)
     elif 'mnist' in args.dataset:
         # worker = CellWorker(input_channels=1, num_blocks=[1, 1, 1], num_channels=[16, 32, 64], num_nodes=args.num_nodes).cuda()
         # worker = MNISTCellWorker(num_nodes=args.num_nodes).cuda()
@@ -130,7 +130,8 @@ if __name__ == "__main__":
     
     atexit.register(save)
     
-    print("pipes ->", worker.get_pipes()[0], file=sys.stderr)
+    cell_pipes = worker.get_pipes()[0]
+    print("pipes ->", cell_pipes, file=sys.stderr)
     
     # --
     # Child
@@ -143,16 +144,15 @@ if __name__ == "__main__":
         lr_scheduler = getattr(LRSchedule, args.child_lr_schedule)(
             lr_init=args.child_lr_init,
             epochs=args.child_lr_epochs,
-            period_length=args.child_sgdr_period_length,
-            t_mult=args.child_sgdr_t_mult,
+            # period_length=args.child_sgdr_period_length,
+            # t_mult=args.child_sgdr_t_mult,
         )
-        print(lr_scheduler(0), file=sys.stderr)
         worker.init_optimizer(
             opt=torch.optim.SGD,
             params=worker.parameters(),
             lr_scheduler=lr_scheduler,
             momentum=0.9,
-            weight_decay=1e-4
+            weight_decay=5e-4
         )
         
         child = Child(worker=worker, dataloaders=dataloaders)
