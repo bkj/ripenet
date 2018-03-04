@@ -57,116 +57,41 @@ done;
 # --
 # Training a model w/ cell search
 
-
-python tests/train_cell_worker.py \
-    --lr-schedule constant \
-    --lr-init 0.1 \
-    --outpath delete-me
-
-
 mkdir _results/trained
 iter=0
 python cell-main.py \
     --child child \
     --outpath _results/trained/trained.$iter \
-    --child-lr-init 0.1
-
-# Works if children don't control path
-
-# mkdir _results/trained
-# iter=0
-# python cell-main.py \
-#     --dataset cifar10 \
-#     --child child \
-#     --algorithm ppo \
-#     --outpath _results/trained/trained.$iter \
-#     --epochs 1000 \
-#     --num-ops 3 \
-#     --temperature 5.0 \
-#     --clip-logits 2.5 \
-#     --entropy-penalty 0.1 \
-#     --controller-lr 0.00035 \
-#     --child-lr-init 0.05 \
-#     --child-lr-schedule sgdr \
-#     --child-sgdr-period-length 10 \
-#     --child-sgdr-t-mult 2
-
-# !! Excluding pooling operations, since they seem to be causing trouble
-
-# ====================================================================
-# fashionMNIST + MNIST
-
-# Training on fashionMNIST
-
-mkdir -p _results/fashion
-mkdir -p _results/fashion/pretrained
-
-# --
-# Pretraining
-
-ARCH="0001" # Identity cell
-DATASET="mnist"
-python tests/train_cell_worker.py \
-    --dataset $DATASET \
-    --outpath _results/fashion/pretrained/$DATASET-$ARCH-1x1 \
-    --architecture $ARCH \
-    --lr-schedule linear \
-    --epochs 20 \
-    --train-size 1.0 \
-    --lr-init 0.01 \
-    --num-nodes 1
-
-
-ARCH="0002_0002" # Two convolutions
-DATASET="mnist"
-python tests/train_cell_worker.py \
-    --dataset $DATASET \
-    --outpath _results/fashion/pretrained/$DATASET-$ARCH \
-    --architecture $ARCH \
-    --lr-schedule constant \
-    --epochs 100 \
-    --train-size 0.9 \
-    --lr-init 0.01 \
-    --num-nodes 2
-
-
-
-
-# --
-# PPO Training
-
-iter=0
-DATASET="mnist"
-python cell-main.py \
-    --dataset $DATASET \
-    --algorithm ppo \
-    --outpath _results/fashion/$DATASET-trained.$iter \
-    --child child \
-    --train-size 0.9 \
-    --num-ops 4 \
-    --num-nodes 1 \
-    --child-lr-init 0.01 \
+    --num-ops 3 \
+    --child-lr-init 0.1 \
+    --child-lr-schedule sgdr \
+    --child-sgdr-period-length 10 \
+    --child-sgdr-t-mult 2 \
     --epochs 1000
 
-# Seems to work
 
-iter=9
-DATASET="mnist"
+# Add convergence check
+iter=1
 python cell-main.py \
-    --dataset $DATASET \
-    --algorithm ppo \
-    --outpath _results/fashion/$DATASET-trained.$iter \
     --child child \
-    --train-size 0.9 \
-    --num-ops 6 \
-    --num-nodes 3 \
-    --child-lr-init 0.01 \
-    --epochs 1000 \
-    --test-topk 10
+    --outpath _results/trained/trained.$iter \
+    --num-ops 3 \
+    --child-lr-init 0.1 \
+    --child-lr-schedule sgdr \
+    --child-sgdr-period-length 10 \
+    --child-sgdr-t-mult 2 \
+    --epochs 1000
 
-# !! Tweak MNIST model to give very good performance at baseline
-# !! SGDR
-# !! FashionMNIST
-
+# Add convergence check that works
+iter=2
+python cell-main.py \
+    --child child \
+    --outpath _results/trained/trained.$iter \
+    --num-ops 3 \
+    --child-lr-init 0.1 \
+    --child-lr-schedule sgdr \
+    --child-sgdr-period-length 10 \
+    --child-sgdr-t-mult 2 \
+    --epochs 1000
 
 

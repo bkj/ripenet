@@ -49,8 +49,8 @@ def parse_args():
     
     parser.add_argument('--test-topk', type=int, default=-1) # Number of paths to sample to quantify performance
     
-    parser.add_argument('--num-ops', type=int, default=6)     # Number of ops to sample
-    parser.add_argument('--num-nodes', type=int, default=2)     # Number of cells to sample
+    parser.add_argument('--num-ops', type=int, default=6)   # Number of ops to sample
+    parser.add_argument('--num-nodes', type=int, default=2) # Number of cells to sample
     
     parser.add_argument('--temperature', type=float, default=1)       # Temperature for logit -- higher means more entropy 
     parser.add_argument('--clip-logits', type=float, default=-1)      # Clip logits
@@ -112,7 +112,6 @@ if __name__ == "__main__":
     
     if args.dataset == 'cifar10':
         worker = CellWorker(num_nodes=args.num_nodes).cuda()
-        print(worker, file=sys.stderr)
     elif 'mnist' in args.dataset:
         # worker = CellWorker(input_channels=1, num_blocks=[1, 1, 1], num_channels=[16, 32, 64], num_nodes=args.num_nodes).cuda()
         # worker = MNISTCellWorker(num_nodes=args.num_nodes).cuda()
@@ -144,8 +143,8 @@ if __name__ == "__main__":
         lr_scheduler = getattr(LRSchedule, args.child_lr_schedule)(
             lr_init=args.child_lr_init,
             epochs=args.child_lr_epochs,
-            # period_length=args.child_sgdr_period_length,
-            # t_mult=args.child_sgdr_t_mult,
+            period_length=args.child_sgdr_period_length,
+            t_mult=args.child_sgdr_t_mult,
         )
         worker.init_optimizer(
             opt=torch.optim.SGD,
@@ -163,6 +162,7 @@ if __name__ == "__main__":
     # Run
     
     total_controller_steps = 0
+    train_rewards, rewards = None, None
     logger = Logger(args.outpath)
     
     for epoch in range(args.epochs):
@@ -173,8 +173,8 @@ if __name__ == "__main__":
         
         if args.child != 'lazy_child':
             states = Variable(torch.randn(args.child_train_paths_per_epoch, state_dim))
-            actions, _, _ = controller(states)
-            child.train_paths(actions)
+            train_actions, _, _ = controller(states)
+            train_rewards = child.train_paths(train_actions)
         
         # --
         # Train controller
@@ -193,7 +193,7 @@ if __name__ == "__main__":
                 raise Exception('unknown algorithm %s' % args.algorithm, file=sys.stderr)
             
             total_controller_steps += 1
-            logger.log(total_controller_steps, child, rewards, actions, mode='val')
+            logger.log(total_controller_steps, child, rewards, actions, train_rewards, train_actions, mode='val')
             
         # --
         # Eval best architecture on test set
@@ -208,6 +208,9 @@ if __name__ == "__main__":
             else:
                 rewards = child.eval_paths(actions, mode='test')
                 
-            logger.log(total_controller_steps, child, rewards, actions, mode='test')
+            logger.log(total_controller_steps, child, rewards, actions, train_rewards, train_actions, mode='test')
+            
+            if logger.controller_convergence > 0.75:
+                break
     
     logger.close()
