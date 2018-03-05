@@ -39,6 +39,7 @@ def parse_args():
     
     parser.add_argument('--child', type=str, default='lazy_child', choices=['lazy_child', 'child'])
     parser.add_argument('--algorithm', type=str, default='ppo', choices=['reinforce', 'ppo'])
+    parser.add_argument('--controller', type=str, default='micro', choices=['hyperband', 'micro'])
     
     parser.add_argument('--epochs', type=int, default=20)  #
     parser.add_argument('--child-train-paths-per-epoch', type=int, default=352)     # Number of paths to use to train child network each epoch
@@ -96,7 +97,7 @@ if __name__ == "__main__":
     # --
     # Controller
     
-    controller = MicroLSTMController(**{
+    controller_args = {
         "input_dim" : state_dim,
         "output_length" : args.num_nodes,
         "output_channels" : args.num_ops,
@@ -105,7 +106,12 @@ if __name__ == "__main__":
         "opt_params" : {
             "lr" : args.controller_lr,
         }
-    })
+    }
+    
+    if args.controller == 'micro':
+        controller = MicroLSTMController(**controller_args)
+    elif args.controller == 'hyperband':
+        controller = HyperbandController(**controller_args)
     
     # --
     # Worker
