@@ -38,7 +38,7 @@ class MicroStep(nn.Module):
 
 class MicroLSTMController(Controller, nn.Module):
     def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, n_input_nodes=1, 
-        temperature=1, clip_logits=-1, opt_params={}, cuda=False):
+        temperature=1, clip_logits=-1, opt_params={}, cuda=False, **kwargs):
         """
             input_dim:       dimension of states
             output_length:   number of cells

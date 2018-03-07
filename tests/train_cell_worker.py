@@ -27,7 +27,6 @@ from basenet.helpers import to_numpy, set_seeds
 
 np.set_printoptions(linewidth=120)
 
-
 # --
 # CLI
 

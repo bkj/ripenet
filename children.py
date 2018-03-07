@@ -78,6 +78,7 @@ class Child(object):
                     self.records_seen[mode] += data.shape[0]
             else:
                 acc = -0.1
+                raise Exception('not self.worker.is_valid')
             
             rewards.append(acc / n)
         
@@ -113,6 +114,7 @@ class Child(object):
                     
             else:
                 acc = -0.1
+                raise Exception('not self.worker.is_valid')
             
             rewards.append(acc / n)
         

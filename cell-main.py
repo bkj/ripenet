@@ -17,11 +17,11 @@ from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
-from controllers import MicroLSTMController
+from controllers import MicroLSTMController, HyperbandController
 from children import LazyChild, Child
 from workers import CellWorker, MNISTCellWorker
 from data import make_cifar_dataloaders, make_mnist_dataloaders
-from logger import Logger
+from logger import Logger, HyperbandLogger
 
 from basenet.helpers import to_numpy, set_seeds
 from basenet.lr import LRSchedule
@@ -37,9 +37,8 @@ def parse_args():
     parser.add_argument('--outpath', type=str, required=True)
     parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'fashion_mnist', 'mnist'])
     
-    parser.add_argument('--child', type=str, default='lazy_child', choices=['lazy_child', 'child'])
-    parser.add_argument('--algorithm', type=str, default='ppo', choices=['reinforce', 'ppo'])
-    parser.add_argument('--controller', type=str, default='micro', choices=['hyperband', 'micro'])
+    parser.add_argument('--child', type=str, default='child', choices=['lazy_child', 'child'])
+    parser.add_argument('--algorithm', type=str, default='ppo', choices=['reinforce', 'ppo', 'hyperband'])
     
     parser.add_argument('--epochs', type=int, default=20)  #
     parser.add_argument('--child-train-paths-per-epoch', type=int, default=352)     # Number of paths to use to train child network each epoch
@@ -53,15 +52,18 @@ def parse_args():
     parser.add_argument('--num-ops', type=int, default=6)   # Number of ops to sample
     parser.add_argument('--num-nodes', type=int, default=2) # Number of cells to sample
     
+    # RL Parameters
     parser.add_argument('--temperature', type=float, default=1)       # Temperature for logit -- higher means more entropy 
     parser.add_argument('--clip-logits', type=float, default=-1)      # Clip logits
     parser.add_argument('--entropy-penalty', type=float, default=0.0) # Penalize entropy 
-    
     parser.add_argument('--controller-lr', type=float, default=0.001)
+    
+    # Hyperband parameters
+    parser.add_argument('--population-size', type=int, default=8)
     
     parser.add_argument('--child-lr-init', type=float, default=0.1)
     parser.add_argument('--child-lr-schedule', type=str, default='constant')
-    parser.add_argument('--child-lr-epochs', type=int, default=1000)
+    parser.add_argument('--child-lr-epochs', type=int, default=1000) # For LR schedule
     parser.add_argument('--child-sgdr-period-length', type=float, default=10)
     parser.add_argument('--child-sgdr-t-mult',  type=float, default=2)
     
@@ -98,20 +100,25 @@ if __name__ == "__main__":
     # Controller
     
     controller_args = {
-        "input_dim" : state_dim,
         "output_length" : args.num_nodes,
         "output_channels" : args.num_ops,
+        # RL parameters
+        "input_dim" : state_dim,
         "temperature" : args.temperature,
         "clip_logits" : args.clip_logits,
         "opt_params" : {
             "lr" : args.controller_lr,
-        }
+        },
+        # Hyperband parameters
+        "population_size" : args.population_size,
     }
     
-    if args.controller == 'micro':
-        controller = MicroLSTMController(**controller_args)
-    elif args.controller == 'hyperband':
+    if args.algorithm != 'hyperband':
+        # controller = MicroLSTMController(**controller_args)
+        pass
+    else:
         controller = HyperbandController(**controller_args)
+        print("controller.population ->\n", controller.population, file=sys.stderr)
     
     # --
     # Worker
@@ -125,9 +132,9 @@ if __name__ == "__main__":
     else:
         raise Exception()
         
-    if args.pretrained_path is not None:
-        print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
-        worker.load_state_dict(torch.load(args.pretrained_path))
+    # if args.pretrained_path is not None:
+    #     print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
+    #     worker.load_state_dict(torch.load(args.pretrained_path))
     
     # Save model on exit
     def save():
@@ -135,8 +142,8 @@ if __name__ == "__main__":
     
     atexit.register(save)
     
-    cell_pipes = worker.get_pipes()[0]
-    print("pipes ->", cell_pipes, file=sys.stderr)
+    # cell_pipes = worker.get_pipes()[0]
+    # print("pipes ->", cell_pipes, file=sys.stderr)
     
     # --
     # Child
@@ -169,7 +176,11 @@ if __name__ == "__main__":
     
     total_controller_steps = 0
     train_rewards, rewards = None, None
-    logger = Logger(args.outpath)
+    
+    if args.algorithm != 'hyperband':
+        logger = Logger(args.outpath)
+    else:
+        logger = HyperbandLogger(args.outpath)
     
     for epoch in range(args.epochs):
         print(('epoch=%d ' % epoch) + ('-' * 50), file=sys.stderr)
@@ -185,38 +196,47 @@ if __name__ == "__main__":
         # --
         # Train controller
         
-        for controller_step in range(args.controller_train_steps_per_epoch):
-            
-            states = Variable(torch.randn(args.controller_train_paths_per_step, state_dim))
-            actions, log_probs, entropies = controller(states)
-            rewards = child.eval_paths(actions, n=1)
-            
-            if args.algorithm == 'reinforce':
-                controller.reinforce_step(rewards, log_probs=log_probs, entropies=entropies, entropy_penalty=args.entropy_penalty)
-            elif args.algorithm == 'ppo':
-                controller.ppo_step(rewards, states=states, actions=actions, entropy_penalty=args.entropy_penalty)
-            else:
-                raise Exception('unknown algorithm %s' % args.algorithm, file=sys.stderr)
-            
-            total_controller_steps += 1
-            logger.log(total_controller_steps, child, rewards, actions, train_rewards, train_actions, mode='val')
+        # if args.algorithm != 'hyperband':
+        #     for controller_step in range(args.controller_train_steps_per_epoch):
+                
+        #         states = Variable(torch.randn(args.controller_train_paths_per_step, state_dim))
+        #         actions, log_probs, entropies = controller(states)
+        #         rewards = child.eval_paths(actions, n=1)
+                
+        #         if args.algorithm == 'reinforce':
+        #             controller.reinforce_step(rewards, log_probs=log_probs, entropies=entropies, entropy_penalty=args.entropy_penalty)
+        #         elif args.algorithm == 'ppo':
+        #             controller.ppo_step(rewards, states=states, actions=actions, entropy_penalty=args.entropy_penalty)
+        #         else:
+        #             raise Exception('unknown algorithm %s' % args.algorithm, file=sys.stderr)
+                
+        #         total_controller_steps += 1
+        #         logger.log(total_controller_steps, child, rewards, actions, train_rewards, train_actions, mode='val')
             
         # --
         # Eval best architecture on test set
         
-        if not (epoch + 1) % args.controller_eval_interval:
-            states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
-            actions, log_probs, entropies = controller(states)
-            if args.test_topk > 0:
-                N = 3
-                topk_idx = child.eval_paths(actions, n=N, mode='val').squeeze().topk(args.test_topk)[1]
-                rewards  = child.eval_paths(actions[topk_idx], mode='test')
-            else:
-                rewards = child.eval_paths(actions, mode='test')
+        if args.algorithm != 'hyperband':
+            pass
+            # if not (epoch + 1) % args.controller_eval_interval:
+            #     states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
+            #     actions, _, _ = controller(states)
+            #     if args.test_topk > 0:
+            #         N = 3
+            #         topk_idx = child.eval_paths(actions, n=N, mode='val').squeeze().topk(args.test_topk)[1]
+            #         rewards  = child.eval_paths(actions[topk_idx], mode='test')
+            #     else:
+            #         rewards = child.eval_paths(actions, mode='test')
+                    
+            #     logger.log(total_controller_steps, child, rewards, actions, train_rewards, train_actions, mode='test')
                 
-            logger.log(total_controller_steps, child, rewards, actions, train_rewards, train_actions, mode='test')
+            #     if logger.controller_convergence > 0.75:
+            #         break
+        else:
+            idx     = np.arange(args.controller_eval_paths_per_epoch) % controller.population.shape[0]
+            actions = controller.population[idx]
+            rewards = child.eval_paths(actions, mode='test')
             
-            if logger.controller_convergence > 0.75:
-                break
+            logger.log(total_controller_steps, child, rewards, actions, train_rewards, train_actions, mode='test')
     
     logger.close()

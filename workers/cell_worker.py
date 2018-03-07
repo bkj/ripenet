@@ -103,9 +103,7 @@ class CellBlock(nn.Module):
         self.num_nodes = num_nodes
         
         self.op_fns = OrderedDict([
-            # >>
             ("noop____", NoopLayer),
-            # <<
             ("identity", IdentityLayer),
             ("conv3___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
             ("conv5___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
@@ -152,13 +150,12 @@ class CellBlock(nn.Module):
         # --
         # Set default architecture
         
-        # 00210102
+        # 0002|0112
         self._default_pipes = [
-            ('data_0', 'node_0', 'conv3___', 0),
-            ('data_0', 'node_0', 'identity', 1),
-            ('data_0', 'node_1', 'noop____', 0),
+            ('data_0', 'node_0', 'noop____', 0),
+            ('data_0', 'node_0', 'conv3___', 1),
+            ('data_0', 'node_1', 'identity', 0),
             ('node_0', 'node_1', 'conv3___', 1),
-            
         ]
         self.reset_pipes()
     
@@ -270,7 +267,7 @@ class _CellWorker(basenet.BaseNet):
     def is_valid(self, layer='_output'):
         return np.all([cell_block.is_valid for cell_block in self.cell_blocks])
 
-
+AVG_CLASSIFIER = True
 class CellWorker(_CellWorker):
     
     def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[64, 128, 256, 512], num_nodes=2):
@@ -296,16 +293,26 @@ class CellWorker(_CellWorker):
                 all_layers.append(BNConv2d(in_channels=channels, out_channels=num_channels[i + 1], kernel_size=3, padding=1, stride=2))
         
         self.layers = nn.Sequential(*all_layers)
-        self.classifier = nn.Sequential(
-            BNConv2d(in_channels=num_channels[-1], out_channels=num_classes, kernel_size=1, padding=0, stride=1),
-            nn.AdaptiveAvgPool2d((1, 1)),
-        )
+        if AVG_CLASSIFIER:
+            self.classifier = nn.Sequential(
+                BNConv2d(in_channels=num_channels[-1], out_channels=num_classes, kernel_size=1, padding=0, stride=1),
+                nn.AdaptiveAvgPool2d((1, 1)),
+            )
+        else:
+            self.linear = nn.Linear(num_channels[-1], num_classes)
     
     def forward(self, x):
         x = self.prep(x)
         x = self.layers(x)
-        x = self.classifier(x)
-        x = x.view((x.shape[0], x.shape[1]))
+        
+        if AVG_CLASSIFIER:
+            x = self.classifier(x)
+            x = x.view((x.shape[0], x.shape[1]))
+        else:
+            x = F.avg_pool2d(x, 4)
+            x = x.view(x.size(0), -1)
+            x = self.linear(x)
+        
         return x
 
 # >>
@@ -344,11 +351,8 @@ class MNISTCellWorker(_CellWorker):
         x = self.post(x)
         return x
 
-# <<
-
 # >>
 # FTOP
-
 
 class FTopNode(nn.Module):
     def __init__(self, op_fns):
