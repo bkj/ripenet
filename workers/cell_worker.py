@@ -31,6 +31,7 @@ from .helpers import InvalidGraphException
 class Accumulator(nn.Module):
     def __init__(self, agg_fn=torch.sum, name='noname'):
         super(Accumulator, self).__init__()
+        
         self.agg_fn = agg_fn
         self.name = name
     
@@ -54,24 +55,57 @@ class Flatten(nn.Module):
 
 
 class IdentityLayer(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(IdentityLayer, self).__init__()
+        
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        
+        if in_channels != out_channels:
+            self.bn = nn.BatchNorm2d(in_channels)
+            self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
+        else:
+            self.conv = None
+    
     def forward(self, x):
-        return x
+        if self.conv is not None:
+            return self.conv(self.bn(x))
+        else:
+            return x
     
     def __repr__(self):
-        return "IdentityLayer()"
+        return "IdentityLayer(%d -> %d)" % (self.in_channels, self.out_channels)
 
 
 class NoopLayer(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(NoopLayer, self).__init__()
+        
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        
+        if in_channels != out_channels:
+            self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, bias=False)
+            self.conv.weight.data.zero_()
+            self.conv.weight.requires_grad = False
+        else:
+            self.conv = None
+    
     def forward(self, x):
-        return x.clone().zero_()
+        x = x.clone().zero_()
+        if self.conv is not None:
+            return self.conv(x) # !! Stupid way to change the number of channels
+        else:
+            return x
     
     def __repr__(self):
-        return "NoopLayer()"
+        return "NoopLayer(%d -> %d)" % (self.in_channels, self.out_channels)
 
 
 class BNConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, **kwargs):
         super(BNConv2d, self).__init__()
+        
         self.add_module('bn', nn.BatchNorm2d(in_channels))
         self.add_module('relu', nn.ReLU())
         self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
@@ -82,11 +116,35 @@ class BNConv2d(nn.Module):
     def __repr__(self):
         return 'BN' + self.conv.__repr__()
 
+class ReshapePool2d(nn.Module):
+    def __init__(self, in_channels, out_channels, mode='avg', **kwargs):
+        super(ReshapePool2d, self).__init__()
+        
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        
+        if in_channels != out_channels:
+            self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
+        else:
+            self.conv = None
+        
+        if mode == 'avg':
+            self.pool = nn.AvgPool2d(**kwargs)
+        else:
+            self.pool = nn.MaxPool2d(**kwargs)
+    
+    def forward(self, x):
+        if self.conv is not None:
+            x = self.conv(x)
+        
+        x = self.pool(x)
+        
+        return x
 
 class BNSepConv2d(BNConv2d):
     def __init__(self, **kwargs):
         assert 'groups' not in kwargs, "BNSepConv2d: cannot specify groups"
-        kwargs['groups'] = kwargs['in_channels']
+        kwargs['groups'] = min(kwargs['in_channels'], kwargs['out_channels'])
         super(BNSepConv2d, self).__init__(**kwargs)
     
     def __repr__(self):
@@ -97,7 +155,7 @@ class BNSepConv2d(BNConv2d):
 # Blocks
 
 class CellBlock(nn.Module):
-    def __init__(self, channels, stride=1, num_nodes=2, num_branches=2):
+    def __init__(self, in_channels, out_channels, stride=1, num_nodes=2, num_branches=2):
         super(CellBlock, self).__init__()
         
         self.num_nodes = num_nodes
@@ -105,12 +163,12 @@ class CellBlock(nn.Module):
         self.op_fns = OrderedDict([
             ("noop____", NoopLayer),
             ("identity", IdentityLayer),
-            ("conv3___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
-            ("conv5___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
-            ("sepconv3", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
-            ("sepconv5", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
-            ("avgpool_", partial(nn.AvgPool2d, stride=stride, kernel_size=3, padding=1)),
-            ("maxpool_", partial(nn.MaxPool2d, stride=stride, kernel_size=3, padding=1)),
+            ("conv3___", partial(BNConv2d, stride=stride, kernel_size=3, padding=1)),
+            ("conv5___", partial(BNConv2d, stride=stride, kernel_size=5, padding=2)),
+            ("sepconv3", partial(BNSepConv2d, stride=stride, kernel_size=3, padding=1)),
+            ("sepconv5", partial(BNSepConv2d, stride=stride, kernel_size=5, padding=2)),
+            ("avgpool_", partial(ReshapePool2d, mode='avg', stride=stride, kernel_size=3, padding=1)),
+            ("maxpool_", partial(ReshapePool2d, mode='max', stride=stride, kernel_size=3, padding=1)),
         ])
         self.op_lookup = dict(zip(range(len(self.op_fns)), self.op_fns.keys()))
         
@@ -134,14 +192,14 @@ class CellBlock(nn.Module):
             for src_id in ['data_0']:
                 for branch in range(num_branches):
                     for op_key, op_fn in self.op_fns.items():
-                        self.pipes[(src_id, 'node_%d' % trg_id, op_key, branch)] = op_fn()
+                        self.pipes[(src_id, 'node_%d' % trg_id, op_key, branch)] = op_fn(in_channels=in_channels, out_channels=out_channels)
         
         # Add pipes between all nodes
         for trg_id in range(num_nodes):
             for src_id in range(trg_id):
                 for branch in range(num_branches):
                     for op_key, op_fn in self.op_fns.items():
-                        self.pipes[('node_%d' % src_id, 'node_%d' % trg_id, op_key, branch)] = op_fn()
+                        self.pipes[('node_%d' % src_id, 'node_%d' % trg_id, op_key, branch)] = op_fn(in_channels=out_channels, out_channels=out_channels)
         
         
         for k, v in self.pipes.items():
@@ -267,30 +325,38 @@ class _CellWorker(basenet.BaseNet):
     def is_valid(self, layer='_output'):
         return np.all([cell_block.is_valid for cell_block in self.cell_blocks])
 
-AVG_CLASSIFIER = True
+
+AVG_CLASSIFIER = False
 class CellWorker(_CellWorker):
     
-    def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[64, 128, 256, 512], num_nodes=2):
+    def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[32, 64, 128, 256, 512], num_nodes=2):
         super(CellWorker, self).__init__()
         
         self.num_nodes = num_nodes
         
-        self.prep = BNConv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=3, padding=1)
+        self.prep = nn.Conv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=1)
         
         self.cell_blocks = []
         
         all_layers = []
-        for i, (block, channels) in enumerate(zip(num_blocks, num_channels)):
+        for i, (block, in_channels, out_channels) in enumerate(zip(num_blocks, num_channels[:-1], num_channels[1:])):
             layers = []
-            for _ in range(block):
-                cell_block = CellBlock(channels=channels, num_nodes=num_nodes)
+            
+            # Add cell at beginning that changes num channels
+            cell_block = CellBlock(in_channels=in_channels, out_channels=out_channels, num_nodes=num_nodes)
+            layers.append(cell_block)
+            self.cell_blocks.append(cell_block)
+            
+            # Add cells that preserve channels
+            for _ in range(block - 1):
+                cell_block = CellBlock(in_channels=out_channels, out_channels=out_channels, num_nodes=num_nodes)
                 layers.append(cell_block)
                 self.cell_blocks.append(cell_block)
             
-            all_layers.append(nn.Sequential(*layers))
+            # Add spatial reduction layer
+            layers.append(nn.AvgPool2d(kernel_size=2, stride=2, padding=0))
             
-            if (i + 1) < len(num_blocks):
-                all_layers.append(BNConv2d(in_channels=channels, out_channels=num_channels[i + 1], kernel_size=3, padding=1, stride=2))
+            all_layers.append(nn.Sequential(*layers))
         
         self.layers = nn.Sequential(*all_layers)
         if AVG_CLASSIFIER:
@@ -309,7 +375,7 @@ class CellWorker(_CellWorker):
             x = self.classifier(x)
             x = x.view((x.shape[0], x.shape[1]))
         else:
-            x = F.avg_pool2d(x, 4)
+            x = F.adaptive_avg_pool2d(x, (1, 1))
             x = x.view(x.size(0), -1)
             x = self.linear(x)
         

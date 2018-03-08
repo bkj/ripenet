@@ -114,8 +114,7 @@ if __name__ == "__main__":
     }
     
     if args.algorithm != 'hyperband':
-        # controller = MicroLSTMController(**controller_args)
-        pass
+        controller = MicroLSTMController(**controller_args)
     else:
         controller = HyperbandController(**controller_args)
         print("controller.population ->\n", controller.population, file=sys.stderr)
@@ -132,9 +131,9 @@ if __name__ == "__main__":
     else:
         raise Exception()
         
-    # if args.pretrained_path is not None:
-    #     print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
-    #     worker.load_state_dict(torch.load(args.pretrained_path))
+    if args.pretrained_path is not None:
+        print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
+        worker.load_state_dict(torch.load(args.pretrained_path))
     
     # Save model on exit
     def save():
