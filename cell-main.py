@@ -44,7 +44,7 @@ def parse_args():
     parser.add_argument('--child-train-paths-per-epoch', type=int, default=352)     # Number of paths to use to train child network each epoch
     parser.add_argument('--controller-train-steps-per-epoch', type=int, default=4)  # Number of times to call RL step on controller per epoch
     parser.add_argument('--controller-train-paths-per-step', type=int, default=50)  # Number of paths to use to train controller per step
-    parser.add_argument('--controller-eval-paths-per-epoch', type=int, default=100) # Number of paths to sample to quantify performance
+    parser.add_argument('--controller-eval-paths-per-epoch', type=int, default=352) # Number of paths to sample to quantify performance
     parser.add_argument('--controller-eval-interval', type=int, default=5)          # Number of paths to sample to quantify performance
     
     parser.add_argument('--test-topk', type=int, default=-1) # Number of paths to sample to quantify performance
@@ -160,7 +160,7 @@ if __name__ == "__main__":
         )
         worker.init_optimizer(
             opt=torch.optim.SGD,
-            params=worker.parameters(),
+            params=filter(lambda x: x.requires_grad, worker.parameters()),
             lr_scheduler=lr_scheduler,
             momentum=0.9,
             weight_decay=5e-4

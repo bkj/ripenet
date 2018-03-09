@@ -15,6 +15,7 @@ class Logger(object):
     def __init__(self, outpath, action_buffer_length=5000):
         self.log_file    = open(outpath + '.log', 'w')
         self.action_file = open(outpath + '.actions', 'w')
+        self.train_action_file = open(outpath + '.train_actions', 'w')
         
         self.history = []
         self.action_buffer_length = action_buffer_length
@@ -87,10 +88,14 @@ class HyperbandLogger(Logger):
         
         self.history.append(record)
         
-        for reward, action in zip(rewards.squeeze(), actions):
+        for reward, action in zip(rewards, actions):
             line = [mode, step, round(float(reward), 5)] + list(action)
             print('\t'.join(map(str, line)), file=self.action_file)
-            self.actions.append(str(action))
+        
+        if train_rewards is not None:
+            for reward, action in zip(train_rewards, train_actions):
+                line = [mode, step, round(float(reward), 5)] + list(action)
+                print('\t'.join(map(str, line)), file=self.train_action_file)
         
         self.log_file.flush()
         self.action_file.flush()

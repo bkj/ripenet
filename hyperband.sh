@@ -36,7 +36,7 @@ python train_cell_worker.py \
 # How does changing the balance of good/bad architectures effect the good architecture?
 
 mkdir -p _results/hyperband
-iter=11
+iter=12
 python cell-main.py \
     --algorithm hyperband \
     --outpath _results/hyperband/hyperband.$iter \
@@ -66,7 +66,7 @@ python cell-main.py \
 # [0 0 2 3 0 1 1 2]
 # [0 0 3 3 0 1 1 2]]
 
-# _results/hyperband/hyperband.{10,11}.log ->
+# _results/hyperband/hyperband.{10,11,12}.log -> (11,12 do longer eval epochs)
  # [[0 0 0 2 0 1 1 2]
  # [0 0 1 2 0 1 1 2]
  # [0 0 2 2 0 1 1 2]
