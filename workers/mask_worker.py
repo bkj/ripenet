@@ -10,7 +10,7 @@ import sys
 import itertools
 import numpy as np
 from dask import get
-from dask.optimization import cull
+from dask.optimize import cull
 from pprint import pprint
 from collections import OrderedDict
 

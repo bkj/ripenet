@@ -87,6 +87,15 @@ python cell-main.py \
 # --
 # Training architectures individualls
 
+ARCH="0002_0112"
+python train_cell_worker.py \
+    --outpath _results/hyperband/pretrained-constant-$ARCH \
+    --architecture $ARCH \
+    --lr-schedule constant \
+    --lr-init 0.01 \
+    --epochs 50 \
+    --train-size 0.9 > _results/hyperband/pretrained-constant-$ARCH.log
+
 for ARCH in $(cat arches); do
     echo $ARCH
     python train_cell_worker.py \

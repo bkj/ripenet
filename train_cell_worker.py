@@ -32,7 +32,7 @@ np.set_printoptions(linewidth=120)
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--outpath', type=str, required=True)
+    parser.add_argument('--outpath', type=str, default='delete-me')
     parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'fashion_mnist', 'mnist'])
     parser.add_argument('--architecture', type=str, default='0002_0112')
     
@@ -60,7 +60,7 @@ if __name__ == "__main__":
     
     if args.dataset == 'cifar10':
         print('train_cell_worker: make_cifar_dataloaders', file=sys.stderr)
-        dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed)
+        dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pin_memory=True)
     elif 'mnist' in args.dataset:
         print('train_cell_worker: make_mnist_dataloaders (%s)' % args.dataset, file=sys.stderr)
         dataloaders = make_mnist_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pretensor=True, mode=args.dataset)
@@ -83,6 +83,7 @@ if __name__ == "__main__":
         print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
         worker.load_state_dict(torch.load(args.pretrained_path))
     
+    
     # --
     # Training options
     
@@ -101,6 +102,9 @@ if __name__ == "__main__":
     assert len(architecture) == (4 * worker.num_nodes), "len(architecture) != 4 * worker.num_nodes"
     print('train_cell_worker: worker.set_path(%s)' % args.architecture, file=sys.stderr)
     worker.set_path(architecture)
+    worker.trim_pipes()
+    
+    print(worker, file=sys.stderr)
     
     cell_pipes = worker.get_pipes()[0]
     config = vars(args)
@@ -116,7 +120,9 @@ if __name__ == "__main__":
     logfile = open(args.outpath + '.log', 'w')
     
     history = []
-    for epoch in tqdm(range(args.epochs)):
+    worker.verbose = True
+    for epoch in range(args.epochs):
+        print('epoch=%d' % epoch)
         train_acc = worker.train_epoch(dataloaders)['acc']
         history.append(OrderedDict([
             ("epoch",     int(epoch)),
@@ -125,6 +131,6 @@ if __name__ == "__main__":
             ("test_acc",  float(worker.eval_epoch(dataloaders, mode='test')['acc'])),
         ]))
         print(json.dumps(history[-1]), file=logfile)
-    
+
     worker.save(args.outpath + '.weights')
     logfile.close()

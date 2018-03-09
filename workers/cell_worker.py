@@ -10,7 +10,7 @@ import sys
 import itertools
 import numpy as np
 from dask import get
-from dask.optimization import cull
+from dask.optimize import cull
 from pprint import pprint
 from collections import OrderedDict
 from functools import partial
@@ -55,15 +55,15 @@ class Flatten(nn.Module):
 
 
 class IdentityLayer(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, stride=1):
         super(IdentityLayer, self).__init__()
         
         self.in_channels = in_channels
         self.out_channels = out_channels
         
-        if in_channels != out_channels:
+        if (in_channels != out_channels) or (stride != 1):
             self.bn = nn.BatchNorm2d(in_channels, track_running_stats=False)
-            self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
+            self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, stride=stride, kernel_size=stride)
         else:
             self.conv = None
     
@@ -78,28 +78,22 @@ class IdentityLayer(nn.Module):
 
 
 class NoopLayer(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, stride=1):
         super(NoopLayer, self).__init__()
         
-        self.in_channels = in_channels
+        self.in_channels  = in_channels
         self.out_channels = out_channels
-        
-        if in_channels != out_channels:
-            self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, bias=False)
-            self.conv.weight.data.zero_()
-            self.conv.weight.requires_grad = False
-        else:
-            self.conv = None
+        self.stride       = stride
     
     def forward(self, x):
-        x = x.clone().zero_()
-        if self.conv is not None:
-            return self.conv(x) # !! Stupid way to change the number of channels
-        else:
-            return x
+        out = Variable(torch.zeros(x.shape[0], self.out_channels, x.shape[2] / self.stride, x.shape[3] / self.stride))
+        if x.is_cuda:
+            out = out.cuda()
+        
+        return out
     
     def __repr__(self):
-        return "NoopLayer(%d -> %d)" % (self.in_channels, self.out_channels)
+        return "NoopLayer(%d -> %d | stride=%d)" % (self.in_channels, self.out_channels, self.stride)
 
 
 class BNConv2d(nn.Module):
@@ -116,11 +110,12 @@ class BNConv2d(nn.Module):
     def __repr__(self):
         return 'BN' + self.conv.__repr__()
 
+
 class ReshapePool2d(nn.Module):
     def __init__(self, in_channels, out_channels, mode='avg', **kwargs):
         super(ReshapePool2d, self).__init__()
         
-        self.in_channels = in_channels
+        self.in_channels  = in_channels
         self.out_channels = out_channels
         
         if in_channels != out_channels:
@@ -137,9 +132,8 @@ class ReshapePool2d(nn.Module):
         if self.conv is not None:
             x = self.conv(x)
         
-        x = self.pool(x)
-        
-        return x
+        return self.pool(x)
+
 
 class BNSepConv2d(BNConv2d):
     def __init__(self, **kwargs):
@@ -163,7 +157,7 @@ class CellBlock(nn.Module):
         self.op_fns = OrderedDict([
             ("noop____", NoopLayer),
             ("identity", IdentityLayer),
-            ("conv3___", partial(BNConv2d, stride=stride, kernel_size=3, padding=1)),
+            ("conv3___", partial(BNConv2d, kernel_size=3, padding=1)),
             ("conv5___", partial(BNConv2d, stride=stride, kernel_size=5, padding=2)),
             ("sepconv3", partial(BNSepConv2d, stride=stride, kernel_size=3, padding=1)),
             ("sepconv5", partial(BNSepConv2d, stride=stride, kernel_size=5, padding=2)),
@@ -178,7 +172,7 @@ class CellBlock(nn.Module):
         self.nodes = OrderedDict([])
         for node_id in range(num_nodes):
             self.nodes['node_%d' % node_id] = Accumulator(name="node_%d" % node_id)
-            
+        
         for k, v in self.nodes.items():
             self.add_module(str(k), v)
         
@@ -192,15 +186,14 @@ class CellBlock(nn.Module):
             for src_id in ['data_0']:
                 for branch in range(num_branches):
                     for op_key, op_fn in self.op_fns.items():
-                        self.pipes[(src_id, 'node_%d' % trg_id, op_key, branch)] = op_fn(in_channels=in_channels, out_channels=out_channels)
+                        self.pipes[(src_id, 'node_%d' % trg_id, op_key, branch)] = op_fn(in_channels=in_channels, out_channels=out_channels, stride=stride)
         
         # Add pipes between all nodes
         for trg_id in range(num_nodes):
             for src_id in range(trg_id):
                 for branch in range(num_branches):
                     for op_key, op_fn in self.op_fns.items():
-                        self.pipes[('node_%d' % src_id, 'node_%d' % trg_id, op_key, branch)] = op_fn(in_channels=out_channels, out_channels=out_channels)
-        
+                        self.pipes[('node_%d' % src_id, 'node_%d' % trg_id, op_key, branch)] = op_fn(in_channels=out_channels, out_channels=out_channels, stride=1)
         
         for k, v in self.pipes.items():
             self.add_module(str(k), v)
@@ -253,16 +246,16 @@ class CellBlock(nn.Module):
         nodes_w_output  = set([k[0] for k in self.graph.keys() if isinstance(k, tuple)])
         nodes_wo_output = [k for k in self.graph.keys() if ('node' in k) and (k not in nodes_w_output)]
         
-        self.graph['_output'] = (Accumulator(name='_output', agg_fn=torch.mean), nodes_wo_output) # May want to sum/avg/concat
+        self.graph['_output'] = (Accumulator(name='_output', agg_fn=torch.mean), nodes_wo_output) # sum or avg or concat?  which is best?
     
     def set_path(self, path):
         path = to_numpy(path).reshape(-1, 4)
         pipes = []
         for i, path_block in enumerate(path):
-            trg_id = 'node_%d' % i # !! Indexing here is a little bad
+            trg_id = 'node_%d' % i # !! Indexing here is a little confusing
             
-            src_0 = 'node_%d' % (path_block[0] - 1) if path_block[0] != 0 else "data_0" # !! Indexing here is a little bad
-            src_1 = 'node_%d' % (path_block[1] - 1) if path_block[1] != 0 else "data_0" # !! Indexing here is a little bad
+            src_0 = 'node_%d' % (path_block[0] - 1) if path_block[0] != 0 else "data_0" # !! Indexing here is a little confusing
+            src_1 = 'node_%d' % (path_block[1] - 1) if path_block[1] != 0 else "data_0" # !! Indexing here is a little confusing
             
             pipes += [
                 (src_0, trg_id, self.op_lookup[path_block[2]], 0),
@@ -273,6 +266,11 @@ class CellBlock(nn.Module):
             assert pipe in self.pipes.keys()
         
         self.set_pipes(pipes)
+    
+    def trim_pipes(self):
+        for k,v in self.pipes.items():
+            if k not in self.active_pipes:
+                delattr(self, str(k))
     
     @property
     def is_valid(self, layer='_output'):
@@ -305,7 +303,7 @@ class _CellWorker(basenet.BaseNet):
             tmp.append(cell_block.get_pipes())
         
         return tmp
-        
+    
     def get_pipes_mask(self):
         tmp = []
         for cell_block in self.cell_blocks:
@@ -321,6 +319,10 @@ class _CellWorker(basenet.BaseNet):
         for cell_block in self.cell_blocks:
             _ = cell_block.set_path(path)
     
+    def trim_pipes(self):
+        for cell_block in self.cell_blocks:
+            _ = cell_block.trim_pipes()
+    
     @property
     def is_valid(self, layer='_output'):
         return np.all([cell_block.is_valid for cell_block in self.cell_blocks])
@@ -334,7 +336,7 @@ class CellWorker(_CellWorker):
         
         self.num_nodes = num_nodes
         
-        self.prep = nn.Conv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=1)
+        self.prep = nn.Conv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=3, padding=1)
         
         self.cell_blocks = []
         
@@ -343,18 +345,18 @@ class CellWorker(_CellWorker):
             layers = []
             
             # Add cell at beginning that changes num channels
-            cell_block = CellBlock(in_channels=in_channels, out_channels=out_channels, num_nodes=num_nodes)
+            cell_block = CellBlock(in_channels=in_channels, out_channels=out_channels, num_nodes=num_nodes, stride=2 if i > 0 else 1)
             layers.append(cell_block)
             self.cell_blocks.append(cell_block)
             
             # Add cells that preserve channels
             for _ in range(block - 1):
-                cell_block = CellBlock(in_channels=out_channels, out_channels=out_channels, num_nodes=num_nodes)
+                cell_block = CellBlock(in_channels=out_channels, out_channels=out_channels, num_nodes=num_nodes , stride=1)
                 layers.append(cell_block)
                 self.cell_blocks.append(cell_block)
             
             # Add spatial reduction layer
-            layers.append(nn.AvgPool2d(kernel_size=2, stride=2, padding=0))
+            # layers.append(nn.AvgPool2d(kernel_size=2, stride=2, padding=0))
             
             all_layers.append(nn.Sequential(*layers))
         

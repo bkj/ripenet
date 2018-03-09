@@ -54,7 +54,7 @@ def make_mnist_dataloaders(root='data', mode='mnist', train_size=1.0, train_batc
 
 
 def make_cifar_dataloaders(root='data', mode='CIFAR10', train_size=1.0, train_batch_size=128, 
-    eval_batch_size=128, num_workers=8, seed=1111, download=False, pin_memory=False):
+    eval_batch_size=128, num_workers=8, seed=1111, download=False, pin_memory=True):
     
     if mode == 'CIFAR10':
         transform_train = torchvision.transforms.Compose([

@@ -89,7 +89,7 @@ if __name__ == "__main__":
     
     if args.dataset == 'cifar10':
         print('train_cell_worker: make_cifar_dataloaders', file=sys.stderr)
-        dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed)
+        dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pin_memory=True)
     elif 'mnist' in args.dataset:
         print('train_cell_worker: make_mnist_dataloaders (%s)' % args.dataset, file=sys.stderr)
         dataloaders = make_mnist_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pretensor=True, mode=args.dataset)
