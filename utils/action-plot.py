@@ -5,22 +5,26 @@ from matplotlib import pyplot as plt
 plt.rcParams['image.cmap'] = 'rainbow'
 
 
-df = pd.read_csv('./_results/hyperband/hyperband.11.train_actions', header=None, sep='\t')
+dfa = pd.read_csv('./_results/hyperband/hyperband.12.actions', header=None, sep='\t')
+dfb = pd.read_csv('./_results/hyperband/hyperband.13.actions', header=None, sep='\t')
 
-df['aid'] = list(map(str, np.array(df[list(range(3, 11))])))
+dfa = dfa.head(dfb.shape[0])
 
-cnts = pd.value_counts(df.aid)
+dfa['aid'] = list(map(str, np.array(dfa[list(range(3, 11))])))
+dfb['aid'] = list(map(str, np.array(dfb[list(range(3, 11))])))
+
+cnts = pd.value_counts(dfa.aid)
 cnts = cnts[np.argsort(cnts.index)]
 
 c = np.floor(255 / cnts.shape[0])
 
-window = 256
 for idx, i in enumerate(cnts.index):
-    tmp = df[2][df.aid == i]
-    tmp = tmp.rolling(window).mean()
-    _ = plt.plot(tmp, alpha=0.5, label=i, c=plt.cm.rainbow(int(c * idx)))
+    tmp = dfa[2][dfa.aid == i]
+    _ = plt.plot(tmp, alpha=0.5, label=i, c='gray')
+    
+    tmp = dfb[2][dfb.aid == i]
+    _ = plt.plot(tmp, alpha=0.5, label=i, c=plt.cm.rainbow(2 * int(c * idx)))
 
-# plt.subplots_adjust(left=0.4)
-# _ = plt.legend(loc='center left', bbox_to_anchor=(-0.7, 0.5), cmap=)
-
+_ = plt.ylim(0, 1)
 show_plot()
+

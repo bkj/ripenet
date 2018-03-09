@@ -89,7 +89,7 @@ if __name__ == "__main__":
     lr_scheduler = getattr(LRSchedule, args.lr_schedule)(lr_init=args.lr_init, epochs=args.epochs)
     worker.init_optimizer(
         opt=torch.optim.SGD,
-        params=worker.parameters(),
+        params=filter(lambda x: x.requires_grad, worker.parameters()),
         lr_scheduler=lr_scheduler,
         momentum=0.9,
         weight_decay=5e-4

@@ -66,7 +66,7 @@ python cell-main.py \
 # [0 0 2 3 0 1 1 2]
 # [0 0 3 3 0 1 1 2]]
 
-# _results/hyperband/hyperband.{10,11,12}.log -> (11,12 do longer eval epochs)
+# _results/hyperband/hyperband.{10,11,12}.log -> (11 does longer eval epochs, 12 fixes BN)
  # [[0 0 0 2 0 1 1 2]
  # [0 0 1 2 0 1 1 2]
  # [0 0 2 2 0 1 1 2]
@@ -84,3 +84,16 @@ python cell-main.py \
  # [0 0 2 3 0 1 3 2]
  # [0 0 3 3 0 1 3 2]]
 
+# --
+# Training architectures individualls
+
+for ARCH in $(cat arches); do
+    echo $ARCH
+    python train_cell_worker.py \
+        --outpath _results/hyperband/pretrained-constant-$ARCH \
+        --architecture $ARCH \
+        --lr-schedule constant \
+        --lr-init 0.01 \
+        --epochs 50 \
+        --train-size 0.9 > _results/hyperband/pretrained-constant-$ARCH.log
+done
