@@ -57,38 +57,12 @@ done;
 # --
 # Training a model w/ cell search
 
-mkdir _results/trained
-iter=0
+iter=2.2
 python cell-main.py \
     --child child \
     --outpath _results/trained/trained.$iter \
-    --num-ops 3 \
-    --child-lr-init 0.1 \
-    --child-lr-schedule sgdr \
-    --child-sgdr-period-length 10 \
-    --child-sgdr-t-mult 2 \
-    --epochs 1000
-
-
-# Add convergence check
-iter=1
-python cell-main.py \
-    --child child \
-    --outpath _results/trained/trained.$iter \
-    --num-ops 3 \
-    --child-lr-init 0.1 \
-    --child-lr-schedule sgdr \
-    --child-sgdr-period-length 10 \
-    --child-sgdr-t-mult 2 \
-    --epochs 1000
-
-# Add convergence check that works
-iter=2
-python cell-main.py \
-    --child child \
-    --outpath _results/trained/trained.$iter \
-    --num-ops 3 \
-    --child-lr-init 0.1 \
+    --num-ops 5 \
+    --child-lr-init 0.01 \
     --child-lr-schedule sgdr \
     --child-sgdr-period-length 10 \
     --child-sgdr-t-mult 2 \

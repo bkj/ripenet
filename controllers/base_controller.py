@@ -6,6 +6,7 @@
 
 from __future__ import print_function, absolute_import
 
+import copy
 import torch
 from torch import nn
 from torch.autograd import Variable

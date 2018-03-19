@@ -14,7 +14,7 @@ def sample_softmax(logits, fixed_action=None):
     # Sample action
     probs = F.softmax(logits, dim=-1)
     if fixed_action is None:
-        actions = probs.multinomial().squeeze()
+        actions = probs.multinomial(num_samples=1).squeeze()
     else:
         actions = fixed_action.contiguous().squeeze()
     
