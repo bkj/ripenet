@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 
+import os
 import sys
 import json
 import numpy as np
 from rsub import *
 from matplotlib import pyplot as plt
-
-array = np.array
 
 all_data = []
 paths = sorted(sys.argv[1:])
@@ -21,7 +20,8 @@ for p in paths:
     except:
         controller_step = [d['step'] for d in val_sub]
     
-    _ = plt.plot(controller_step, mean_reward, label=p, alpha=0.5)# + 0.75 * (p == paths[-1]))
+    print(p)
+    _ = plt.plot(controller_step, mean_reward, label=os.path.basename(p) + '_val', alpha=0.25)
     
     # test
     test_sub = [d for d in data if d['mode'] == 'test']
@@ -31,7 +31,7 @@ for p in paths:
     except:
         controller_step = [d['step'] for d in test_sub]
     
-    _ = plt.plot(controller_step, mean_reward, label=p, alpha=0.5)#+ 0.75 * (p == paths[-1]))
+    _ = plt.plot(controller_step, mean_reward, label=os.path.basename(p) + '_test', alpha=0.75)
 
 _ = plt.legend(loc='lower right')
 _ = plt.xlabel('controller_step')

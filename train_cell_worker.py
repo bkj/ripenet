@@ -122,7 +122,7 @@ if __name__ == "__main__":
     history = []
     worker.verbose = True
     for epoch in range(args.epochs):
-        print('epoch=%d' % epoch)
+        print('epoch=%d' % epoch, file=sys.stderr)
         train_acc = worker.train_epoch(dataloaders)['acc']
         history.append(OrderedDict([
             ("epoch",     int(epoch)),
@@ -131,6 +131,7 @@ if __name__ == "__main__":
             ("test_acc",  float(worker.eval_epoch(dataloaders, mode='test')['acc'])),
         ]))
         print(json.dumps(history[-1]), file=logfile)
+        logfile.flush()
 
     worker.save(args.outpath + '.weights')
     logfile.close()

@@ -355,7 +355,7 @@ class CellWorker(_CellWorker):
                 layers.append(cell_block)
                 self.cell_blocks.append(cell_block)
             
-            # Add spatial reduction layer
+            # Add spatial reduction layer -- don't need since we're using stride=2 above
             # layers.append(nn.AvgPool2d(kernel_size=2, stride=2, padding=0))
             
             all_layers.append(nn.Sequential(*layers))
