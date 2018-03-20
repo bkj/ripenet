@@ -36,7 +36,7 @@ python train_cell_worker.py \
 # How does changing the balance of good/bad architectures effect the good architecture?
 
 mkdir -p _results/hyperband
-iter=12
+iter=13
 python cell-main.py \
     --algorithm hyperband \
     --outpath _results/hyperband/hyperband.$iter \
@@ -84,8 +84,55 @@ python cell-main.py \
  # [0 0 2 3 0 1 3 2]
  # [0 0 3 3 0 1 3 2]]
 
+iter=14
+python cell-main.py \
+    --algorithm hyperband \
+    --outpath _results/hyperband/hyperband.$iter \
+    --controller-eval-interval 1 \
+    --child-lr-init 0.01 \
+    --epochs 1000 \
+    --num-ops 6 \
+    --seed 678 \
+    --train-size 0.9 \
+    --population-size 32
+
+# 32 random architectures
+
+ # [[0 0 1 3 0 0 0 1]
+ # [0 0 2 5 0 1 3 3]
+ # [0 0 0 1 0 0 0 0]
+ # [0 0 0 0 0 0 5 1]
+ # [0 0 3 2 1 1 0 1]
+ # [0 0 5 5 1 1 4 4]
+ # [0 0 2 1 0 0 4 0]
+ # [0 0 4 0 0 1 3 1]
+ # [0 0 4 2 1 1 1 4]
+ # [0 0 3 2 0 0 1 4]
+ # [0 0 2 5 0 0 1 1]
+ # [0 0 5 3 1 0 5 2]
+ # [0 0 2 1 1 1 3 2]
+ # [0 0 1 4 1 1 4 0]
+ # [0 0 2 3 0 0 4 2]
+ # [0 0 1 1 0 0 1 2]
+ # [0 0 5 5 1 0 4 0]
+ # [0 0 0 1 1 1 1 4]
+ # [0 0 4 0 0 1 0 1]
+ # [0 0 0 5 0 1 2 2]
+ # [0 0 5 1 0 1 1 4]
+ # [0 0 3 0 0 0 4 3]
+ # [0 0 4 0 1 0 4 5]
+ # [0 0 1 5 1 1 2 4]
+ # [0 0 5 5 0 1 3 3]
+ # [0 0 0 3 0 0 4 0]
+ # [0 0 3 1 1 1 0 4]
+ # [0 0 4 2 0 1 4 2]
+ # [0 0 2 0 0 1 1 5]
+ # [0 0 3 0 0 1 4 3]
+ # [0 0 3 5 1 0 0 4]
+ # [0 0 3 5 0 1 3 5]]
+
 # --
-# Training architectures individualls
+# Training architectures individually
 
 ARCH="0002_0112"
 python train_cell_worker.py \
