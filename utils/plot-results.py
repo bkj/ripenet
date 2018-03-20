@@ -14,22 +14,22 @@ for p in paths:
     data = list(map(json.loads, open(p).readlines()))
     
     # val
-    # val_sub = [d for d in data if d['mode'] == 'val']
-    # mean_reward = [d['mean_reward'] for d in val_sub]
-    # try:
-    #     controller_step = [d['controller_step'] for d in val_sub]
-    # except:
-    #     controller_step = [d['step'] for d in val_sub]
+    val_sub = [d for d in data if d['mode'] == 'val']
+    mean_reward = [d['mean_reward'] for d in val_sub]
+    try:
+        controller_step = [d['controller_step'] for d in val_sub]
+    except:
+        controller_step = [d['step'] for d in val_sub]
     
-    # _ = plt.plot(controller_step, mean_reward, label=p, alpha=0.5)# + 0.75 * (p == paths[-1]))
+    _ = plt.plot(controller_step, mean_reward, label=p, alpha=0.5)# + 0.75 * (p == paths[-1]))
     
     # test
     test_sub = [d for d in data if d['mode'] == 'test']
     mean_reward = [d['mean_reward'] for d in test_sub]
-    # try:
-    #     controller_step = [d['controller_step'] for d in test_sub]
-    # except:
-    controller_step = [d['step'] for d in test_sub]
+    try:
+        controller_step = [d['controller_step'] for d in test_sub]
+    except:
+        controller_step = [d['step'] for d in test_sub]
     
     _ = plt.plot(controller_step, mean_reward, label=p, alpha=0.5)#+ 0.75 * (p == paths[-1]))
 
@@ -37,7 +37,7 @@ _ = plt.legend(loc='lower right')
 _ = plt.xlabel('controller_step')
 _ = plt.ylabel('mean_reward')
 
-_ = plt.ylim(0.85, 0.94)
+_ = plt.ylim(0.8, 1.0)
 
 for i in np.linspace(0.90, 1.0, 6):
     _ = plt.axhline(i, c='grey', alpha=0.1)

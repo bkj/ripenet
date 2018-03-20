@@ -57,7 +57,7 @@ done;
 # --
 # Training a model w/ cell search
 
-iter=2.2
+iter=3.1
 python cell-main.py \
     --child child \
     --outpath _results/trained/trained.$iter \
@@ -66,6 +66,7 @@ python cell-main.py \
     --child-lr-schedule sgdr \
     --child-sgdr-period-length 10 \
     --child-sgdr-t-mult 2 \
+    --temperature 2.0 \
     --epochs 1000
 
-
+# !! Should implement some evolutionary method -- could control the convergence issue better probably

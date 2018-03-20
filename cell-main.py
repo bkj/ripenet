@@ -228,8 +228,8 @@ if __name__ == "__main__":
                     
                 logger.log(total_controller_steps, child, rewards, actions, train_rewards, train_actions, mode='test')
                 
-                if logger.controller_convergence > 0.99:
-                    break
+                # if logger.controller_convergence > 0.99:
+                #     break
         else:
             idx     = np.arange(args.controller_eval_paths_per_epoch) % controller.population.shape[0]
             actions = controller.population[idx]
