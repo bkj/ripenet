@@ -10,13 +10,13 @@ array = np.array
 
 all_data = []
 paths = sorted(sys.argv[1:])
-k_good = '[0 0 0 2 0 1 1 2]'
 
 for p in paths:
     data = list(map(json.loads, open(p).readlines()))
-    mean_reward_good = [d['mean_reward'][k_good] for d in data]
-    controller_step = [d['records_seen']['train'] for d in data]
-    _ = plt.plot(controller_step, mean_reward_good, label=p, alpha=0.25)# + 0.75 * (p == paths[-1]))
+    for k in data[0]['mean_reward'].keys():
+        mean_rewards = [d['mean_reward'][k] for d in data]
+        controller_step = [d['records_seen']['train'] for d in data]
+        _ = plt.plot(controller_step, mean_rewards, label=p, alpha=0.25)
 
 
 _ = plt.xlabel('controller_step')

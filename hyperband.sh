@@ -96,7 +96,9 @@ python cell-main.py \
     --train-size 0.9 \
     --population-size 32
 
-# 32 random architectures
+# _results/hyperband/hyperband.{14,15}.log -> 32 random architectures
+#   14 uses constant LR of 0.01
+#   15 uses SGDR
 
  # [[0 0 1 3 0 0 0 1]
  # [0 0 2 5 0 1 3 3]
