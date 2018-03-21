@@ -84,7 +84,7 @@ python cell-main.py \
  # [0 0 2 3 0 1 3 2]
  # [0 0 3 3 0 1 3 2]]
 
-iter=14
+iter=15
 python cell-main.py \
     --algorithm hyperband \
     --outpath _results/hyperband/hyperband.$iter \
@@ -94,7 +94,11 @@ python cell-main.py \
     --num-ops 6 \
     --seed 678 \
     --train-size 0.9 \
-    --population-size 32
+    --population-size 32 \
+    --child-lr-schedule sgdr \
+    --child-sgdr-period-length 10 \
+    --child-sgdr-t-mult 2
+
 
 # _results/hyperband/hyperband.{14,15}.log -> 32 random architectures
 #   14 uses constant LR of 0.01
