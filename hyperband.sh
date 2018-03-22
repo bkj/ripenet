@@ -17,6 +17,15 @@ python train_cell_worker.py \
 # {"epoch": 18, "train_acc": 0.96568, "val_acc": null, "test_acc": 0.9157}
 # {"epoch": 19, "train_acc": 0.97652, "val_acc": null, "test_acc": 0.9232}
 
+ARCH="0025_0133"
+python train_cell_worker.py \
+    --outpath _results/hyperband/pretrained-$ARCH \
+    --architecture $ARCH \
+    --lr-schedule linear \
+    --lr-init 0.1 \
+    --epochs 50 \
+    --train-size 0.9 > _results/hyperband/pretrained-$ARCH.log
+
 # --
 # Train model w/ suboptimal learning rate schedule
 
@@ -137,11 +146,30 @@ python cell-main.py \
  # [0 0 3 5 1 0 0 4]
  # [0 0 3 5 0 1 3 5]]
 
+iter=resample_0
+CUDA_VISIBLE_DEVICES=1 python cell-main.py \
+    --algorithm hyperband \
+    --outpath _results/hyperband/hyperband.$iter \
+    --controller-eval-interval 1 \
+    --child-lr-init 0.01 \
+    --epochs 1000 \
+    --num-ops 6 \
+    --seed 678 \
+    --train-size 0.9 \
+    --population-size 32 \
+    --child-lr-schedule sgdr \
+    --child-sgdr-period-length 30 \
+    --child-sgdr-t-mult 1 \
+    --hyperband-halving \
+    --hyperband-resample \
+    --controller-train-interval 30 \
+    --controller-train-mult 1
+
 # --
 # Training architectures individually
 
-ARCH="0002_0112"
-python train_cell_worker.py \
+ARCH="0025_0133"
+CUDA_VISIBLE_DEVICES=0 python train_cell_worker.py \
     --outpath _results/hyperband/pretrained-constant-$ARCH \
     --architecture $ARCH \
     --lr-schedule constant \

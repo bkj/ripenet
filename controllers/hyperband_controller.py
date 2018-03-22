@@ -6,6 +6,7 @@
 
 from __future__ import print_function, absolute_import
 
+import sys
 import numpy as np
 
 import torch
@@ -13,84 +14,73 @@ from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
+from basenet.helpers import to_numpy
 from .base_controller import Controller
 from .controller_helpers import sample_softmax, sample_bernoulli, prep_logits
 
-import re
-
-def parse_arch(arch):
-    arch = list(re.sub('[^0-9]','', arch))
-    arch = np.array(list(map(int, arch)))
-    return arch
-
-
-# GOOD_ARCH = parse_arch("0002_0112")
-# BAD_ARCH  = parse_arch("0012_0112")
-
-# ARCHS = [
-#     "0002_0112",
-#     "0012_0112",
-#     "0022_0112",
-#     "0032_0112",
-    
-#     "0003_0112",
-#     "0013_0112",
-#     "0023_0112",
-#     "0033_0112",
-
-#     "0002_0122",
-#     "0012_0122",
-#     "0022_0122",
-#     "0032_0122",
-    
-#     "0003_0132",
-#     "0013_0132",
-#     "0023_0132",
-#     "0033_0132",
-# ]
-# ARCHS = np.vstack([parse_arch(a) for a in ARCHS])
 
 class HyperbandController(object):
     def __init__(self, input_dim=32, output_length=2, output_channels=4, population_size=32, **kwargs):
         self.output_length   = output_length
         self.output_channels = output_channels
-        self.population      = self.__sample_population(population_size=population_size)
-    
-    def __sample_population(self, population_size):
+        
+        self.population_size = population_size
+        self.population      = self.__initialize_population()
+        
+        template = []
+        for block_id in range(output_length):
+            template += [
+                block_id + 1,         # in_left
+                block_id + 1,         # in_right
+                self.output_channels, # op_left
+                self.output_channels, # op_right
+            ]
+        
+        self.template = np.array(template)
+        
+    def __initialize_population(self):
         blocks = []
         for block_id in range(self.output_length):
-            in_left  = np.random.choice(block_id + 1, population_size)
-            in_right = np.random.choice(block_id + 1, population_size)
-            op_left  = np.random.choice(self.output_channels, population_size)
-            op_right = np.random.choice(self.output_channels, population_size)
+            in_left  = np.random.choice(block_id + 1, self.population_size)
+            in_right = np.random.choice(block_id + 1, self.population_size)
+            op_left  = np.random.choice(self.output_channels, self.population_size)
+            op_right = np.random.choice(self.output_channels, self.population_size)
             blocks.append(np.column_stack([in_left, in_right, op_left, op_right]))
         
-        blocks = np.hstack(blocks)
-        # >>
-        # for i in range(population_size - 1):
-        #     blocks[i] = GOOD_ARCH
-        # <<
+        return np.hstack(blocks)
+    
+    def hyperband_step(self, rewards, resample=False):
+        reward_ranking = np.argsort(to_numpy(-rewards).squeeze())
         
-        return blocks
+        self.population = self.population[reward_ranking]
+        self.population = self.population[:int(self.population_size / 2)]
         
-        # >>
-        # num_good_blocks = 6
-        # num_bad_blocks  = population_size - num_good_blocks
-        # return np.vstack(
-        #     [GOOD_ARCH for _ in range(num_good_blocks)] + 
-        #     [BAD_ARCH for _ in range(num_bad_blocks)]
-        # )
-        # <<
+        if not resample:
+            self.population_size = self.population.shape[0]
+        else:
+            new_population = []
+            for member in self.population:
+                new_member = member.copy()
+                while (new_member == member).all():
+                    idx = np.random.choice(member.shape[0])
+                    new_member[idx] = np.random.choice(self.template[idx])
+                
+                new_population.append(new_member)
+            
+            self.population = np.column_stack([self.population, new_population]).reshape((self.population.shape[0] * 2, self.population.shape[1]))
         
-        return ARCHS
+        print('HyperbandController.hyperband_step: new population (%d) ->\n %s' % (self.population_size, str(self.population)), file=sys.stderr)
     
     def __call__(self, states):
-        action_idx = np.random.choice(self.population.shape[0], states.shape[0])
+        action_idx = np.random.choice(self.population_size, states.shape[0])
         all_actions = torch.LongTensor(self.population[action_idx])
         return all_actions, None, None
 
 
 if __name__ == '__main__':
     c = HyperbandController()
-    all_actions, _, _ = c(np.arange(10))
-    print(all_actions)
+    print(to_numpy(c.population))
+    print(c.template)
+    
+    c.hyperband_step(np.arange(c.population_size), resample=True)
+    c.population
