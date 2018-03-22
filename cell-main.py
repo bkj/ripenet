@@ -194,6 +194,7 @@ if __name__ == "__main__":
             states = Variable(torch.randn(args.child_train_paths_per_epoch, state_dim))
             train_actions, _, _ = controller(states)
             train_rewards = child.train_paths(train_actions)
+            logger.log(epoch=epoch, rewards=train_rewards, actions=train_actions, mode='train')
         
         # --
         # Train controller
@@ -218,16 +219,14 @@ if __name__ == "__main__":
                 #     logger.log(epoch, child, rewards, actions, train_rewards, train_actions, mode='val')
             else:
                 if args.hyperband_halving:
-                    rewards = child.eval_paths(controller.population, mode='val', n=20)
-                    controller_population = controller.population.copy()
-                    controller.hyperband_step(rewards, resample=args.hyperband_resample)
+                    rewards = child.eval_paths(controller.population, mode='val', n=1)
+                    logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='val')
                     
-                    logger.log(epoch, child, rewards, controller_population, train_rewards, train_actions, mode='val')
-                    train_rewards, train_actions = None, None # Prevent double logging
-                    
+                    controller_update = controller.hyperband_step(rewards, resample=args.hyperband_resample)
                     total_controller_steps += 1
                     controller_train_interval = sum([args.controller_train_interval * 2 ** i for i in range(total_controller_steps + 1)])
                     print('controller_train_interval', controller_train_interval, file=sys.stderr)
+                    logger.controller_log(epoch=epoch, controller_update=controller_update)
         
         # --
         # Eval best architecture on test set
@@ -249,7 +248,7 @@ if __name__ == "__main__":
                     # # if logger.controller_convergence > 0.99:
                     # #     break
             else:
-                rewards = child.eval_paths(controller.population, mode='test', n=4)
-                logger.log(epoch, child, rewards, controller.population, train_rewards, train_actions, mode='test')
+                rewards = child.eval_paths(controller.population, mode='test', n=1)
+                logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='test')
     
     logger.close()

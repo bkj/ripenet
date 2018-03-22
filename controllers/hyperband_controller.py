@@ -52,12 +52,22 @@ class HyperbandController(object):
     def hyperband_step(self, rewards, resample=False):
         reward_ranking = np.argsort(to_numpy(-rewards).squeeze())
         
+        update = []
+        
         self.population = self.population[reward_ranking]
+        
+        for member in self.population[int(self.population_size / 2):]:
+            update.append({
+                "action" : "popped",
+                "member" : list(map(int, member)),
+            })
+        
         self.population = self.population[:int(self.population_size / 2)]
         
         if not resample:
             self.population_size = self.population.shape[0]
         else:
+            # Sample perturbed versions of sucessful architectures
             new_population = []
             for member in self.population:
                 new_member = member.copy()
@@ -67,9 +77,15 @@ class HyperbandController(object):
                 
                 new_population.append(new_member)
             
+            for member in new_population:
+                update.append({
+                    "action" : "pushed",
+                    "member" : list(map(int, member)),
+                })
+            
             self.population = np.column_stack([self.population, new_population]).reshape((self.population.shape[0] * 2, self.population.shape[1]))
         
-        print('HyperbandController.hyperband_step: new population (%d) ->\n %s' % (self.population_size, str(self.population)), file=sys.stderr)
+        return update
     
     def __call__(self, states):
         action_idx = np.random.choice(self.population_size, states.shape[0])

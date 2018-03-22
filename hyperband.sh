@@ -146,7 +146,7 @@ python cell-main.py \
  # [0 0 3 5 1 0 0 4]
  # [0 0 3 5 0 1 3 5]]
 
-iter=resample_0
+iter=resample_2
 CUDA_VISIBLE_DEVICES=1 python cell-main.py \
     --algorithm hyperband \
     --outpath _results/hyperband/hyperband.$iter \
@@ -154,15 +154,16 @@ CUDA_VISIBLE_DEVICES=1 python cell-main.py \
     --child-lr-init 0.01 \
     --epochs 1000 \
     --num-ops 6 \
+    --num-nodes 3 \
     --seed 678 \
     --train-size 0.9 \
     --population-size 32 \
     --child-lr-schedule sgdr \
-    --child-sgdr-period-length 30 \
+    --child-sgdr-period-length 40 \
     --child-sgdr-t-mult 1 \
     --hyperband-halving \
     --hyperband-resample \
-    --controller-train-interval 30 \
+    --controller-train-interval 40 \
     --controller-train-mult 1
 
 # --
