@@ -85,6 +85,8 @@ class HyperbandController(object):
             
             self.population = np.column_stack([self.population, new_population]).reshape((self.population.shape[0] * 2, self.population.shape[1]))
         
+        print('self.population -> \n %s' % str(self.population))
+        
         return update
     
     def __call__(self, states):

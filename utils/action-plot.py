@@ -15,13 +15,14 @@ plt.rcParams['image.cmap'] = 'rainbow'
 # --
 
 # f = sys.argv[1]
-f = '_results/hyperband/hyperband.resample_0.train_actions'
+f = '_results/hyperband/hyperband.resample_2/test.actions'
 
 df = pd.read_csv(f, header=None, sep='\t')
 df['aid'] = list(map(str, df[list(range(3, 11))].values))
 
 for idx, i in enumerate(np.unique(df.aid)):
     tmp = df[df.aid == i]
+    tmp[2] = tmp[2].rolling(2).mean()
     _ = plt.plot(tmp[1], tmp[2], alpha=0.5, label=i)
 
 _ = plt.ylim(0, 1)

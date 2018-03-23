@@ -69,7 +69,7 @@ class HyperbandLogger():
             "val"        : open(os.path.join(outpath, 'val.log'), 'w'),
             "test"       : open(os.path.join(outpath, 'test.log'), 'w'),
             
-            "controller" : open(os.path.join(outpath, '.controller.log'), 'w'),
+            "controller" : open(os.path.join(outpath, 'controller.log'), 'w'),
         }
         
         self.action_files = {

@@ -87,7 +87,10 @@ if __name__ == "__main__":
     args = parse_args()
     set_seeds(args.seed)
     
-    json.dump(vars(args), open(args.outpath + '.config', 'w'))
+    if not os.path.exists(args.outpath):
+        os.makedirs(args.outpath)
+    
+    json.dump(vars(args), open(os.path.join(args.outpath, 'config'), 'w'))
     
     # --
     # IO
@@ -142,7 +145,7 @@ if __name__ == "__main__":
     
     # Save model on exit
     def save():
-        worker.save(args.outpath + '.weights')
+        worker.save(os.path.join(args.outpath, 'weights'))
     
     atexit.register(save)
     
@@ -219,12 +222,12 @@ if __name__ == "__main__":
                 #     logger.log(epoch, child, rewards, actions, train_rewards, train_actions, mode='val')
             else:
                 if args.hyperband_halving:
-                    rewards = child.eval_paths(controller.population, mode='val', n=1)
+                    rewards = child.eval_paths(controller.population, mode='val', n=10)
                     logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='val')
                     
                     controller_update = controller.hyperband_step(rewards, resample=args.hyperband_resample)
                     total_controller_steps += 1
-                    controller_train_interval = sum([args.controller_train_interval * 2 ** i for i in range(total_controller_steps + 1)])
+                    controller_train_interval = sum([args.controller_train_interval * (args.controller_train_mult ** i) for i in range(total_controller_steps + 1)])
                     print('controller_train_interval', controller_train_interval, file=sys.stderr)
                     logger.controller_log(epoch=epoch, controller_update=controller_update)
         
@@ -248,7 +251,7 @@ if __name__ == "__main__":
                     # # if logger.controller_convergence > 0.99:
                     # #     break
             else:
-                rewards = child.eval_paths(controller.population, mode='test', n=1)
+                rewards = child.eval_paths(controller.population, mode='test', n=10)
                 logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='test')
     
     logger.close()
