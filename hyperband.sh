@@ -146,7 +146,7 @@ python cell-main.py \
  # [0 0 3 5 1 0 0 4]
  # [0 0 3 5 0 1 3 5]]
 
-iter=resample_3
+iter=resample_4
 CUDA_VISIBLE_DEVICES=1 python cell-main.py \
     --algorithm hyperband \
     --outpath _results/hyperband/hyperband.$iter \

@@ -144,8 +144,8 @@ if __name__ == "__main__":
         worker.load_state_dict(torch.load(args.pretrained_path))
     
     # Save model on exit
-    def save():
-        worker.save(os.path.join(args.outpath, 'weights'))
+    def save(suffix='final'):
+        worker.save(os.path.join(args.outpath, 'weights.' + suffix))
     
     atexit.register(save)
     
@@ -222,6 +222,8 @@ if __name__ == "__main__":
                 #     logger.log(epoch, child, rewards, actions, train_rewards, train_actions, mode='val')
             else:
                 if args.hyperband_halving:
+                    save(suffix=str(epoch + 1)) # Checkpoint model
+                    
                     rewards = child.eval_paths(controller.population, mode='val', n=10)
                     logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='val')
                     
@@ -230,6 +232,8 @@ if __name__ == "__main__":
                     controller_train_interval = sum([args.controller_train_interval * (args.controller_train_mult ** i) for i in range(total_controller_steps + 1)])
                     print('controller_train_interval', controller_train_interval, file=sys.stderr)
                     logger.controller_log(epoch=epoch, controller_update=controller_update)
+                    
+
         
         # --
         # Eval best architecture on test set
