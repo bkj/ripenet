@@ -6,13 +6,10 @@
 
 from __future__ import print_function, division
 
-import sys
-import itertools
 import numpy as np
 from dask import get
 from dask.optimize import cull
-from pprint import pprint
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from functools import partial
 
 import torch
@@ -28,7 +25,16 @@ from .helpers import InvalidGraphException
 # --
 # Helper layers
 
-class Accumulator(nn.Module):
+class PipeModule(nn.Module):
+    def __init__(self, needs_path=False):
+        super(PipeModule, self).__init__()
+        self.needs_path = needs_path
+    
+    def set_pipes(self, pipes):
+        raise NotImplemented
+
+
+class Accumulator(PipeModule):
     def __init__(self, agg_fn=torch.sum, name='noname'):
         super(Accumulator, self).__init__()
         
@@ -46,7 +52,7 @@ class Accumulator(nn.Module):
         return 'Accumulator(%s)' % self.name
 
 
-class Flatten(nn.Module):
+class Flatten(PipeModule):
     def forward(self, x):
         return x.view(x.shape[0], -1)
         
@@ -54,15 +60,29 @@ class Flatten(nn.Module):
         return "Flatten()"
 
 
-class IdentityLayer(nn.Module):
+class PipeBatchNorm2d(PipeModule):
+    def __init__(self, *args, **kwargs):
+        super(PipeBatchNorm2d, self).__init__(needs_path=True)
+        self.layers = defaultdict(lambda: nn.BatchNorm2d(*args, **kwargs).cuda())
+        self.active_layer = None
+    
+    def set_path(self, path):
+        self.active_layer = self.layers[tuple(path)]
+    
+    def forward(self, x):
+        assert self.active_layer is not None, "!! PipeBatchNorm2d: active_layer is None"
+        return self.active_layer(x)
+
+
+class IdentityLayer(PipeModule):
     def __init__(self, in_channels, out_channels, stride=1):
-        super(IdentityLayer, self).__init__()
+        super(IdentityLayer, self).__init__(needs_path=(in_channels != out_channels))
         
         self.in_channels = in_channels
         self.out_channels = out_channels
         
         if (in_channels != out_channels) or (stride != 1):
-            self.bn = nn.BatchNorm2d(in_channels, track_running_stats=False)
+            self.bn = PipeBatchNorm2d(in_channels)
             self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, stride=stride, kernel_size=stride)
         else:
             self.conv = None
@@ -73,11 +93,14 @@ class IdentityLayer(nn.Module):
         else:
             return x
     
+    def set_path(self, path):
+        _ = self.bn.set_path(path)
+    
     def __repr__(self):
         return "IdentityLayer(%d -> %d)" % (self.in_channels, self.out_channels)
 
 
-class NoopLayer(nn.Module):
+class NoopLayer(PipeModule):
     def __init__(self, in_channels, out_channels, stride=1):
         super(NoopLayer, self).__init__()
         
@@ -96,22 +119,25 @@ class NoopLayer(nn.Module):
         return "NoopLayer(%d -> %d | stride=%d)" % (self.in_channels, self.out_channels, self.stride)
 
 
-class BNConv2d(nn.Module):
+class BNConv2d(PipeModule):
     def __init__(self, in_channels, out_channels, **kwargs):
-        super(BNConv2d, self).__init__()
+        super(BNConv2d, self).__init__(needs_path=True)
         
-        self.add_module('bn', nn.BatchNorm2d(in_channels,track_running_stats=False))
+        self.add_module('bn', PipeBatchNorm2d(in_channels))
         self.add_module('relu', nn.ReLU())
         self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
     
     def forward(self, x):
         return self.conv(self.relu(self.bn(x)))
     
+    def set_path(self, path):
+        _ = self.bn.set_path(path)
+    
     def __repr__(self):
         return 'BN' + self.conv.__repr__()
 
 
-class ReshapePool2d(nn.Module):
+class ReshapePool2d(PipeModule):
     def __init__(self, in_channels, out_channels, mode='avg', **kwargs):
         super(ReshapePool2d, self).__init__()
         
@@ -123,6 +149,7 @@ class ReshapePool2d(nn.Module):
         else:
             self.conv = None
         
+        self.mode = mode
         if mode == 'avg':
             self.pool = nn.AvgPool2d(**kwargs)
         else:
@@ -133,6 +160,9 @@ class ReshapePool2d(nn.Module):
             x = self.conv(x)
         
         return self.pool(x)
+    
+    def __repr__(self):
+        return 'ReshapePool2d(mode=%s, in_channels=%d, out_channels=%d)' % (self.mode, self.in_channels, self.out_channels)
 
 
 class BNSepConv2d(BNConv2d):
@@ -249,9 +279,14 @@ class CellBlock(nn.Module):
         self.graph['_output'] = (Accumulator(name='_output', agg_fn=torch.mean), nodes_wo_output) # sum or avg or concat?  which is best?
     
     def set_path(self, path):
-        path = to_numpy(path).reshape(-1, 4)
+        path = to_numpy(path)
+        
+        for child in self.children():
+            if child.needs_path:
+                child.set_path(path)
+        
         pipes = []
-        for i, path_block in enumerate(path):
+        for i, path_block in enumerate(path.reshape(-1, 4)):
             trg_id = 'node_%d' % i # !! Indexing here is a little confusing
             
             src_0 = 'node_%d' % (path_block[0] - 1) if path_block[0] != 0 else "data_0" # !! Indexing here is a little confusing
@@ -355,17 +390,15 @@ class CellWorker(_CellWorker):
                 layers.append(cell_block)
                 self.cell_blocks.append(cell_block)
             
-            # Add spatial reduction layer -- don't need since we're using stride=2 above
-            # layers.append(nn.AvgPool2d(kernel_size=2, stride=2, padding=0))
-            
             all_layers.append(nn.Sequential(*layers))
         
         self.layers = nn.Sequential(*all_layers)
         if AVG_CLASSIFIER:
-            self.classifier = nn.Sequential(
-                BNConv2d(in_channels=num_channels[-1], out_channels=num_classes, kernel_size=1, padding=0, stride=1),
-                nn.AdaptiveAvgPool2d((1, 1)),
-            )
+            # self.classifier = nn.Sequential(
+            #     BNConv2d(in_channels=num_channels[-1], out_channels=num_classes, kernel_size=1, padding=0, stride=1),
+            #     nn.AdaptiveAvgPool2d((1, 1)),
+            # )
+            raise Exception
         else:
             self.linear = nn.Linear(num_channels[-1], num_classes)
     
@@ -374,8 +407,9 @@ class CellWorker(_CellWorker):
         x = self.layers(x)
         
         if AVG_CLASSIFIER:
-            x = self.classifier(x)
-            x = x.view((x.shape[0], x.shape[1]))
+            # x = self.classifier(x)
+            # x = x.view((x.shape[0], x.shape[1]))
+            raise Exception
         else:
             x = F.adaptive_avg_pool2d(x, (1, 1))
             x = x.view(x.size(0), -1)

@@ -146,7 +146,7 @@ python cell-main.py \
  # [0 0 3 5 1 0 0 4]
  # [0 0 3 5 0 1 3 5]]
 
-iter=resample_4
+iter=resample_5
 CUDA_VISIBLE_DEVICES=1 python cell-main.py \
     --algorithm hyperband \
     --outpath _results/hyperband/hyperband.$iter \
@@ -165,6 +165,8 @@ CUDA_VISIBLE_DEVICES=1 python cell-main.py \
     --hyperband-resample \
     --controller-train-interval 40 \
     --controller-train-mult 1
+
+# resample_5 -> adds PipeBatchNorm2d
 
 # --
 # Training architectures individually
