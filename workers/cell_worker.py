@@ -62,7 +62,7 @@ class IdentityLayer(nn.Module):
         self.out_channels = out_channels
         
         if (in_channels != out_channels) or (stride != 1):
-            self.bn = nn.BatchNorm2d(in_channels, track_running_stats=False)
+            self.bn = nn.BatchNorm2d(in_channels, track_running_stats=True)
             self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, stride=stride, kernel_size=stride)
         else:
             self.conv = None
@@ -100,7 +100,7 @@ class BNConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, **kwargs):
         super(BNConv2d, self).__init__()
         
-        self.add_module('bn', nn.BatchNorm2d(in_channels,track_running_stats=False))
+        self.add_module('bn', nn.BatchNorm2d(in_channels,track_running_stats=True))
         self.add_module('relu', nn.ReLU())
         self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
     
@@ -354,9 +354,6 @@ class CellWorker(_CellWorker):
                 cell_block = CellBlock(in_channels=out_channels, out_channels=out_channels, num_nodes=num_nodes , stride=1)
                 layers.append(cell_block)
                 self.cell_blocks.append(cell_block)
-            
-            # Add spatial reduction layer -- don't need since we're using stride=2 above
-            # layers.append(nn.AvgPool2d(kernel_size=2, stride=2, padding=0))
             
             all_layers.append(nn.Sequential(*layers))
         
