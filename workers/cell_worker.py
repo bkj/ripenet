@@ -61,13 +61,24 @@ class Flatten(PipeModule):
 
 
 class PipeBatchNorm2d(PipeModule):
+    # !! Parameters here are probably not getting optimized -- because the
+    # optimizer doesn't know about them
     def __init__(self, *args, **kwargs):
         super(PipeBatchNorm2d, self).__init__(needs_path=True)
-        self.layers = defaultdict(lambda: nn.BatchNorm2d(*args, **kwargs).cuda())
+        
+        self.make_new_layer = lambda: nn.BatchNorm2d(*args, **kwargs).cuda()
+        
+        self.layers = {}
         self.active_layer = None
     
     def set_path(self, path):
-        self.active_layer = self.layers[tuple(path)]
+        if str(tuple(path)) not in self.layers:
+            new_layer = self.make_new_layer()       # Create new layer
+            self.layers[tuple(path)] = new_layer    # Add to dict
+            self.active_layer = new_layer           # Set active
+            self.add_module(str(tuple(path)), new_layer) # Register
+        else:
+            self.active_layer = self.layers[str(tuple(path))]
     
     def forward(self, x):
         assert self.active_layer is not None, "!! PipeBatchNorm2d: active_layer is None"

@@ -17,7 +17,7 @@ python train_cell_worker.py \
 # {"epoch": 18, "train_acc": 0.96568, "val_acc": null, "test_acc": 0.9157}
 # {"epoch": 19, "train_acc": 0.97652, "val_acc": null, "test_acc": 0.9232}
 
-ARCH="0025_0133"
+ARCH="0055_0133_0142"
 python train_cell_worker.py \
     --outpath _results/hyperband/pretrained-$ARCH \
     --architecture $ARCH \
