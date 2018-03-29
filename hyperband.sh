@@ -17,7 +17,7 @@ python train_cell_worker.py \
 # {"epoch": 18, "train_acc": 0.96568, "val_acc": null, "test_acc": 0.9157}
 # {"epoch": 19, "train_acc": 0.97652, "val_acc": null, "test_acc": 0.9232}
 
-ARCH="0025_0133"
+ARCH="0055_0133_0142"
 python train_cell_worker.py \
     --outpath _results/hyperband/pretrained-$ARCH \
     --architecture $ARCH \
@@ -146,7 +146,7 @@ python cell-main.py \
  # [0 0 3 5 1 0 0 4]
  # [0 0 3 5 0 1 3 5]]
 
-iter=resample_4
+iter=resample_5
 CUDA_VISIBLE_DEVICES=1 python cell-main.py \
     --algorithm hyperband \
     --outpath _results/hyperband/hyperband.$iter \
@@ -165,6 +165,8 @@ CUDA_VISIBLE_DEVICES=1 python cell-main.py \
     --hyperband-resample \
     --controller-train-interval 40 \
     --controller-train-mult 1
+
+# resample_5 -> adds PipeBatchNorm2d
 
 # --
 # Training architectures individually

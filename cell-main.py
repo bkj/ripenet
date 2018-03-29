@@ -19,9 +19,9 @@ from torch.autograd import Variable
 
 from controllers import MicroLSTMController, HyperbandController
 from children import LazyChild, Child
-from workers import CellWorker, MNISTCellWorker
+from workers import CellWorker
 from data import make_cifar_dataloaders, make_mnist_dataloaders
-from logger import Logger, HyperbandLogger
+from logger import HyperbandLogger
 
 from basenet.helpers import to_numpy, set_seeds
 from basenet.lr import LRSchedule
@@ -49,8 +49,6 @@ def parse_args():
     parser.add_argument('--controller-train-interval', type=int, default=1)         # Frequency of controller steps (in epochs)
     parser.add_argument('--controller-eval-interval', type=int, default=1)          # Frequency of running on test set (in epochs)
     parser.add_argument('--controller-train-mult', type=int, default=1)             # Increase train interval over time?
-    
-    parser.add_argument('--test-topk', type=int, default=-1) # Number of paths to sample to quantify performance
     
     parser.add_argument('--num-ops', type=int, default=6)   # Number of ops to sample
     parser.add_argument('--num-nodes', type=int, default=2) # Number of cells to sample
@@ -182,10 +180,10 @@ if __name__ == "__main__":
     train_rewards, rewards = None, None
     controller_train_interval = args.controller_train_interval
     
-    if args.algorithm != 'hyperband':
-        logger = Logger(args.outpath)
-    else:
-        logger = HyperbandLogger(args.outpath)
+    # if args.algorithm != 'hyperband':
+    #     logger = Logger(args.outpath)
+    # else:
+    logger = HyperbandLogger(args.outpath)
     
     for epoch in range(args.epochs):
         print(('epoch=%d ' % epoch) + ('-' * 50), file=sys.stderr)
@@ -204,56 +202,45 @@ if __name__ == "__main__":
         
         if not (epoch + 1) % controller_train_interval:
             if args.algorithm != 'hyperband':
-                pass
-                # for controller_step in range(args.controller_train_steps_per_epoch):
+                for controller_step in range(args.controller_train_steps_per_epoch):
+                    total_controller_steps += 1
                     
-                #     states = Variable(torch.randn(args.controller_train_paths_per_step, state_dim))
-                #     actions, log_probs, entropies = controller(states)
-                #     rewards = child.eval_paths(actions, n=1)
+                    states = Variable(torch.randn(args.controller_train_paths_per_step, state_dim))
+                    actions, log_probs, entropies = controller(states)
+                    rewards = child.eval_paths(actions, n=1)
+                    logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='val')
                     
-                #     if args.algorithm == 'reinforce':
-                #         controller.reinforce_step(rewards, log_probs=log_probs, entropies=entropies, entropy_penalty=args.entropy_penalty)
-                #     elif args.algorithm == 'ppo':
-                #         controller.ppo_step(rewards, states=states, actions=actions, entropy_penalty=args.entropy_penalty)
-                #     else:
-                #         raise Exception('unknown algorithm %s' % args.algorithm, file=sys.stderr)
+                    if args.algorithm == 'reinforce':
+                        controller.reinforce_step(rewards, log_probs=log_probs, entropies=entropies, entropy_penalty=args.entropy_penalty)
+                    elif args.algorithm == 'ppo':
+                        controller.ppo_step(rewards, states=states, actions=actions, entropy_penalty=args.entropy_penalty)
+                    else:
+                        raise Exception('unknown algorithm %s' % args.algorithm, file=sys.stderr)
                     
-                #     total_controller_steps += 1
-                #     logger.log(epoch, child, rewards, actions, train_rewards, train_actions, mode='val')
             else:
                 if args.hyperband_halving:
+                    total_controller_steps += 1
+                    
                     save(suffix=str(epoch + 1)) # Checkpoint model
                     
                     rewards = child.eval_paths(controller.population, mode='val', n=10)
                     logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='val')
                     
                     controller_update = controller.hyperband_step(rewards, resample=args.hyperband_resample)
-                    total_controller_steps += 1
-                    controller_train_interval = sum([args.controller_train_interval * (args.controller_train_mult ** i) for i in range(total_controller_steps + 1)])
-                    print('controller_train_interval', controller_train_interval, file=sys.stderr)
-                    logger.controller_log(epoch=epoch, controller_update=controller_update)
                     
-
+                    # Update controller train interval
+                    controller_train_interval = sum([args.controller_train_interval * (args.controller_train_mult ** i) for i in range(total_controller_steps + 1)])
+                    logger.controller_log(epoch=epoch, controller_update=controller_update)
         
         # --
         # Eval best architecture on test set
         
         if not (epoch + 1) % args.controller_eval_interval:
             if args.algorithm != 'hyperband':
-                    pass
-                    # states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
-                    # actions, _, _ = controller(states)
-                    # if args.test_topk > 0:
-                    #     N = 3
-                    #     topk_idx = child.eval_paths(actions, n=N, mode='val').squeeze().topk(args.test_topk)[1]
-                    #     rewards  = child.eval_paths(actions[topk_idx], mode='test')
-                    # else:
-                    #     rewards = child.eval_paths(actions, mode='test')
-                        
-                    # logger.log(epoch, child, rewards, actions, train_rewards, train_actions, mode='test')
-                    
-                    # # if logger.controller_convergence > 0.99:
-                    # #     break
+                    states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
+                    actions, _, _ = controller(states)
+                    rewards = child.eval_paths(actions, mode='test')
+                    logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='test')
             else:
                 rewards = child.eval_paths(controller.population, mode='test', n=10)
                 logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='test')

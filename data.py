@@ -79,7 +79,9 @@ def make_cifar_dataloaders(root='data', mode='CIFAR10', train_size=1.0, train_ba
         num_workers, seed, pin_memory, shuffle_test)
 
 
-def _make_loaders(trainset, testset, train_size, train_batch_size, eval_batch_size, num_workers, seed, pin_memory, shuffle_test):
+def _make_loaders(trainset, testset, train_size, train_batch_size, eval_batch_size,
+    num_workers, seed, pin_memory, shuffle_test):
+    
     if train_size < 1:
         train_inds, val_inds = train_test_split(np.arange(len(trainset)), train_size=train_size, random_state=seed)
         trainloader = torch.utils.data.DataLoader(

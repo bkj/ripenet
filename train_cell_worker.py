@@ -19,7 +19,7 @@ from torch.nn import functional as F
 from torch.autograd import Variable
 
 from data import make_cifar_dataloaders, make_mnist_dataloaders
-from workers import CellWorker, MNISTCellWorker
+from workers import CellWorker
 
 import basenet
 from basenet.lr import LRSchedule

@@ -69,6 +69,7 @@ def eval_paths(self, paths, n=1, mode='val'):
     
     return torch.FloatTensor(rewards).view(-1, 1)
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
     
@@ -82,16 +83,16 @@ def parse_args():
     parser.add_argument('--child-sgdr-t-mult',  type=float, default=2)
     
     parser.add_argument('--train-size', type=float, default=0.9)     # Proportion of training data to use for training (vs validation) 
-    parser.add_argument('--pretrained-path', type=str, default='_results/hyperband/hyperband.resample_4/weights.760')
+    parser.add_argument('--pretrained-path', type=str, default='_results/hyperband/hyperband.resample_5/weights.720')
     
     parser.add_argument('--seed', type=int, default=123)
     
     return parser.parse_args()
 
 
-actions = pd.read_csv('_results/hyperband/hyperband.resample_4/test.actions', sep='\t', header=None)
+actions = pd.read_csv('_results/hyperband/hyperband.resample_5/test.actions', sep='\t', header=None)
 actions.columns = ['mode', 'epoch', 'score'] + list(range(actions.shape[1] - 4)) + ['aid']
-actions = actions[actions.epoch == 760]
+actions = actions[actions.epoch == 720]
 
 paths = np.array(actions[list(range(12))].drop_duplicates())
 
@@ -101,23 +102,46 @@ set_seeds(args.seed)
 dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pin_memory=True, shuffle_test=False)
 
 worker = CellWorker(num_nodes=args.num_nodes).cuda().eval()
-worker.load(args.pretrained_path)
 
-# lr_scheduler = getattr(LRSchedule, args.child_lr_schedule)(
-#     lr_init=args.child_lr_init,
-#     epochs=args.child_lr_epochs,
-#     period_length=args.child_sgdr_period_length,
-#     t_mult=args.child_sgdr_t_mult,
-# )
-# worker.init_optimizer(
-#     opt=torch.optim.SGD,
-#     params=filter(lambda x: x.requires_grad, worker.parameters()),
-#     lr_scheduler=lr_scheduler,
-#     momentum=0.9,
-#     weight_decay=5e-4
-# )
+# worker.load(args.pretrained_path)
+# >>
+state_dict = torch.load(args.pretrained_path)
+all_keys = list(state_dict.keys())
+for k in all_keys:
+    if 'active_layer' in k:
+        del state_dict[k]
+
+worker.load_state_dict(state_dict)
+# <<
+
 
 child = Child(worker=worker, dataloaders=dataloaders)
+
+# >>
+worker.init_optimizer(
+    opt=torch.optim.SGD,
+    params=filter(lambda x: x.requires_grad, worker.parameters()),
+    lr=0.0,
+    momentum=0.9,
+    weight_decay=5e-4
+)
+
+child.train_paths(paths)
+# Fix messed up batchnorm
+
+worker.layers
+all_keys
+
+for k1, v1 in worker.layers.named_children():
+    for k2, v2 in v1.named_children():
+        for k3, v3 in v2.named_children():
+            for k4, v4 in v3.named_children():
+                if k4 == 'bn':
+                    print(list(v4.named_children()))
+
+
+# <<
+
 rewards = child.eval_paths(paths, mode='test', n=10)
 
 res = {}
