@@ -71,12 +71,13 @@ class PipeBatchNorm2d(PipeModule):
         self.layers = {}
         self.active_layer = None
     
-    def set_path(self, path):
+    def set_path(self, path, callback):
         if str(tuple(path)) not in self.layers:
-            new_layer = self.make_new_layer()       # Create new layer
-            self.layers[tuple(path)] = new_layer    # Add to dict
-            self.active_layer = new_layer           # Set active
+            new_layer = self.make_new_layer()            # Create new layer
+            self.layers[tuple(path)] = new_layer         # Add to dict
+            self.active_layer = new_layer                # Set active
             self.add_module(str(tuple(path)), new_layer) # Register
+            callback(mode='bn', new_layer=new_layer)
         else:
             self.active_layer = self.layers[str(tuple(path))]
     
@@ -104,8 +105,8 @@ class IdentityLayer(PipeModule):
         else:
             return x
     
-    def set_path(self, path):
-        _ = self.bn.set_path(path)
+    def set_path(self, path, callback):
+        _ = self.bn.set_path(path, callback)
     
     def __repr__(self):
         return "IdentityLayer(%d -> %d)" % (self.in_channels, self.out_channels)
@@ -141,8 +142,8 @@ class BNConv2d(PipeModule):
     def forward(self, x):
         return self.conv(self.relu(self.bn(x)))
     
-    def set_path(self, path):
-        _ = self.bn.set_path(path)
+    def set_path(self, path, callback):
+        _ = self.bn.set_path(path, callback)
     
     def __repr__(self):
         return 'BN' + self.conv.__repr__()
@@ -289,12 +290,12 @@ class CellBlock(nn.Module):
         
         self.graph['_output'] = (Accumulator(name='_output', agg_fn=torch.mean), nodes_wo_output) # sum or avg or concat?  which is best?
     
-    def set_path(self, path):
+    def set_path(self, path, callback):
         path = to_numpy(path)
         
         for child in self.children():
             if child.needs_path:
-                child.set_path(path)
+                child.set_path(path, callback)
         
         pipes = []
         for i, path_block in enumerate(path.reshape(-1, 4)):
@@ -361,9 +362,17 @@ class _CellWorker(basenet.BaseNet):
         for cell_block in self.cell_blocks:
             _ = cell_block.set_pipes(pipes)
     
+    def set_path_callback(self, mode, **kwargs):
+        if mode == 'bn':
+            self.opt.add_param_group({
+                "params" : kwargs['new_layer'].parameters(),
+            })
+        else:
+            raise Exception("_CellWorker.set_path_callback: unknown mode %s" % mode, file=sys.stderr)
+    
     def set_path(self, path):
         for cell_block in self.cell_blocks:
-            _ = cell_block.set_path(path)
+            cell_block.set_path(path, self.set_path_callback)
     
     def trim_pipes(self):
         for cell_block in self.cell_blocks:
@@ -427,153 +436,3 @@ class CellWorker(_CellWorker):
             x = self.linear(x)
         
         return x
-
-# >>
-# MNIST
-
-class MNISTCellWorker(_CellWorker):
-    def __init__(self, num_classes=10, input_channels=1, channels=64, num_nodes=2, num_branches=2):
-        super(MNISTCellWorker, self).__init__()
-        
-        self.num_nodes = num_nodes
-        
-        self.prep = nn.Sequential(*[
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-        ])
-        
-        # self.cell_block = CellBlock(channels=64, num_nodes=num_nodes, num_branches=num_branches)
-        self.cell_block = nn.Conv2d(32, 64, kernel_size=5, padding=2)
-        self.cell_blocks = []
-        
-        self.post = nn.Sequential(*[
-            nn.Dropout2d(p=0.5),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-            Flatten(),
-            nn.Linear(3136, 128),
-            nn.ReLU(),
-            nn.Dropout(p=0.5),
-            nn.Linear(128, 10),
-        ])
-    
-    def forward(self, x):
-        x = self.prep(x)
-        x = self.cell_block(x)
-        x = self.post(x)
-        return x
-
-# >>
-# FTOP
-
-class FTopNode(nn.Module):
-    def __init__(self, op_fns):
-        super(FTopNode, self).__init__()
-        
-        self.nodes      = nn.ModuleList([f() for f in op_fns.values()])
-        self.node_names = op_fns.keys()
-        self.idx        = 0
-    
-    def set_idx(self, idx):
-        self.idx = idx
-    
-    def forward(self, x):
-        return self.nodes[self.idx](x)
-    
-    def __repr__(self):
-        return self.nodes[self.idx].__repr__()
-
-
-class FTopBlock(nn.Module):
-    def __init__(self, channels, stride=1, num_nodes=2, num_branches=2):
-        super(FTopBlock, self).__init__()
-        
-        self.num_nodes    = num_nodes
-        self.num_branches = num_branches
-        
-        self.op_fns = OrderedDict([
-            ("noop____", NoopLayer),
-            ("identity", IdentityLayer),
-            ("conv3___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
-            ("conv5___", partial(BNConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
-            ("sepconv3", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=3, padding=1)),
-            ("sepconv5", partial(BNSepConv2d, in_channels=channels, out_channels=channels, stride=stride, kernel_size=5, padding=2)),
-            ("avgpool_", partial(nn.AvgPool2d, stride=stride, kernel_size=3, padding=1)),
-            ("maxpool_", partial(nn.MaxPool2d, stride=stride, kernel_size=3, padding=1)),
-        ])
-        self.op_lookup = dict(zip(range(len(self.op_fns)), self.op_fns.keys()))
-        
-        self.branches = []
-        for branch_id in range(num_branches):
-            branch = []
-            for node_id in range(num_nodes):
-                node = FTopNode(self.op_fns)
-                branch.append(node)
-            
-            self.branches.append(nn.Sequential(*branch))
-        
-        self.branches = nn.ModuleList(self.branches)
-        
-        # --
-        # Set default architecture
-        
-        self._default_pipes = np.array([1, 1, 1, 1])
-        self.reset_pipes()
-    
-    def reset_pipes(self):
-        self.set_path(self._default_pipes)
-    
-    def get_pipes(self):
-        return list(map(int, self.pipes))
-    
-    def set_path(self, path):
-        self.pipes = to_numpy(path).astype(int)
-        
-        path = to_numpy(path).reshape(-1, self.num_branches)
-        for branch_id, branch_path in enumerate(path):
-            for node_id, b in enumerate(branch_path):
-                self.branches[branch_id][node_id].idx = b
-        
-    def forward(self, x, agg_fn=torch.sum):
-        res = [branch(x) for branch in self.branches]
-        return agg_fn(torch.stack(res), dim=0)
-
-
-class FTopWorker(_CellWorker):
-    def __init__(self, num_classes=10, input_channels=1, channels=64, num_nodes=2, num_branches=2):
-        super(FTopWorker, self).__init__()
-        
-        self.num_nodes = num_nodes
-        
-        self.prep = nn.Sequential(*[
-            nn.Conv2d(1, 64, kernel_size=3, padding=1),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-        ])
-        
-        self.cell_block = FTopBlock(channels=64, num_nodes=num_nodes, num_branches=num_branches)
-        self.cell_blocks = [self.cell_block]
-        
-        self.post = nn.Sequential(*[
-            nn.Dropout2d(p=0.5),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-            Flatten(),
-            nn.Linear(3136, 128),
-            nn.ReLU(),
-            nn.Dropout(p=0.5),
-            nn.Linear(128, 10),
-        ])
-    
-    def forward(self, x):
-        x = self.prep(x)
-        x = self.cell_block(x)
-        x = self.post(x)
-        return x
-    
-    @property
-    def is_valid(self):
-        return True
-
-# <<

@@ -19,7 +19,7 @@ from torch.autograd import Variable
 
 from controllers import MicroLSTMController, HyperbandController
 from children import LazyChild, Child
-from workers import CellWorker, MNISTCellWorker
+from workers import CellWorker
 from data import make_cifar_dataloaders, make_mnist_dataloaders
 from logger import HyperbandLogger
 
