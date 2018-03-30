@@ -21,7 +21,7 @@ from controllers import MicroLSTMController, HyperbandController
 from children import LazyChild, Child
 from workers import CellWorker
 from data import make_cifar_dataloaders, make_mnist_dataloaders
-from logger import HyperbandLogger
+from logger import Logger
 
 from basenet.helpers import to_numpy, set_seeds
 from basenet.lr import LRSchedule
@@ -93,14 +93,8 @@ if __name__ == "__main__":
     # --
     # IO
     
-    if args.dataset == 'cifar10':
-        print('train_cell_worker: make_cifar_dataloaders', file=sys.stderr)
-        dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pin_memory=True)
-    elif 'mnist' in args.dataset:
-        print('train_cell_worker: make_mnist_dataloaders (%s)' % args.dataset, file=sys.stderr)
-        dataloaders = make_mnist_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pretensor=True, mode=args.dataset)
-    else:
-        raise Exception()
+    print('train_cell_worker: make_cifar_dataloaders', file=sys.stderr)
+    dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pin_memory=True)
     
     # --
     # Controller
@@ -128,15 +122,8 @@ if __name__ == "__main__":
     # --
     # Worker
     
-    if args.dataset == 'cifar10':
-        worker = CellWorker(num_nodes=args.num_nodes).cuda()
-    elif 'mnist' in args.dataset:
-        # worker = CellWorker(input_channels=1, num_blocks=[1, 1, 1], num_channels=[16, 32, 64], num_nodes=args.num_nodes).cuda()
-        # worker = MNISTCellWorker(num_nodes=args.num_nodes).cuda()
-        pass
-    else:
-        raise Exception()
-        
+    worker = CellWorker(num_nodes=args.num_nodes).cuda()
+    
     if args.pretrained_path is not None:
         print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
         worker.load_state_dict(torch.load(args.pretrained_path))
@@ -151,98 +138,87 @@ if __name__ == "__main__":
     # Child
     
     print('main.py: child -> %s' % args.child, file=sys.stderr)
+
+    lr_scheduler = getattr(LRSchedule, args.child_lr_schedule)(
+        lr_init=args.child_lr_init,
+        epochs=args.child_lr_epochs,
+        period_length=args.child_sgdr_period_length,
+        t_mult=args.child_sgdr_t_mult,
+    )
+    worker.init_optimizer(
+        opt=torch.optim.SGD,
+        params=filter(lambda x: x.requires_grad, worker.parameters()),
+        lr_scheduler=lr_scheduler,
+        momentum=0.9,
+        weight_decay=5e-4
+    )
     
-    if args.child == 'lazy_child':
-        child = LazyChild(worker=worker, dataloaders=dataloaders)
-    elif args.child == 'child':
-        lr_scheduler = getattr(LRSchedule, args.child_lr_schedule)(
-            lr_init=args.child_lr_init,
-            epochs=args.child_lr_epochs,
-            period_length=args.child_sgdr_period_length,
-            t_mult=args.child_sgdr_t_mult,
-        )
-        worker.init_optimizer(
-            opt=torch.optim.SGD,
-            params=filter(lambda x: x.requires_grad, worker.parameters()),
-            lr_scheduler=lr_scheduler,
-            momentum=0.9,
-            weight_decay=5e-4
-        )
-        
-        child = Child(worker=worker, dataloaders=dataloaders)
-    else:
-        raise Exception('main.py: unknown child %s' % args.child, file=sys.stderr)
-        
+    child = Child(worker=worker, dataloaders=dataloaders)
+    
     # --
     # Run
     
     total_controller_steps = 0
     train_rewards, rewards = None, None
     controller_train_interval = args.controller_train_interval
-    
-    # if args.algorithm != 'hyperband':
-    #     logger = Logger(args.outpath)
-    # else:
-    logger = HyperbandLogger(args.outpath)
+    logger = Logger(args.outpath)
     
     for epoch in range(args.epochs):
         print(('epoch=%d ' % epoch) + ('-' * 50), file=sys.stderr)
         
-        # --
+        
         # Train child
+        states = Variable(torch.randn(args.child_train_paths_per_epoch, state_dim))
+        train_actions, _, _ = controller(states)
+        train_rewards = child.train_paths(train_actions)
+        logger.log(epoch=epoch, rewards=train_rewards, actions=train_actions, mode='train')
         
-        if args.child != 'lazy_child':
-            states = Variable(torch.randn(args.child_train_paths_per_epoch, state_dim))
-            train_actions, _, _ = controller(states)
-            train_rewards = child.train_paths(train_actions)
-            logger.log(epoch=epoch, rewards=train_rewards, actions=train_actions, mode='train')
         
-        # --
-        # Train controller
-        
-        if not (epoch + 1) % controller_train_interval:
-            if args.algorithm != 'hyperband':
-                for controller_step in range(args.controller_train_steps_per_epoch):
-                    total_controller_steps += 1
-                    
-                    states = Variable(torch.randn(args.controller_train_paths_per_step, state_dim))
-                    actions, log_probs, entropies = controller(states)
-                    rewards = child.eval_paths(actions, n=1)
-                    logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='val')
-                    
-                    if args.algorithm == 'reinforce':
-                        controller.reinforce_step(rewards, log_probs=log_probs, entropies=entropies, entropy_penalty=args.entropy_penalty)
-                    elif args.algorithm == 'ppo':
-                        controller.ppo_step(rewards, states=states, actions=actions, entropy_penalty=args.entropy_penalty)
-                    else:
-                        raise Exception('unknown algorithm %s' % args.algorithm, file=sys.stderr)
-                    
+        # Log test loss w/ high variance
+        def do_eval(n=1):
+            if args.algorithm == 'hyperband':
+                rewards = child.eval_paths(controller.population, mode='test', n=1)
+                logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='test', extra={"n" : 1})
             else:
-                if args.hyperband_halving:
-                    total_controller_steps += 1
-                    
-                    save(suffix=str(epoch + 1)) # Checkpoint model
-                    
-                    rewards = child.eval_paths(controller.population, mode='val', n=10)
-                    logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='val')
-                    
-                    controller_update = controller.hyperband_step(rewards, resample=args.hyperband_resample)
-                    
-                    # Update controller train interval
-                    controller_train_interval = sum([args.controller_train_interval * (args.controller_train_mult ** i) for i in range(total_controller_steps + 1)])
-                    logger.controller_log(epoch=epoch, controller_update=controller_update)
-        
-        # --
-        # Eval best architecture on test set
-        
-        if not (epoch + 1) % args.controller_eval_interval:
-            if args.algorithm != 'hyperband':
                 states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
                 actions, _, _ = controller(states)
-                rewards = child.eval_paths(actions, mode='test')
-                logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='test')
+                rewards = child.eval_paths(actions, mode='test', n=1)
+                logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='test', extra={"n" : 1})
+        
+        if (not (epoch + 1) % args.controller_eval_interval) and ((epoch + 1) % controller_train_interval):
+            do_eval(n=1)
+        
+        
+        # Train controller
+        if not (epoch + 1) % controller_train_interval:
+            total_controller_steps += 1
+            
+            # Change frequency of controller updates (maybe)
+            controller_train_interval = sum([args.controller_train_interval * (args.controller_train_mult ** i) 
+                for i in range(total_controller_steps + 1)])
+            
+            # Log test loss w/ low(er) variance
+            do_eval(n=10)
+            
+            # Checkpoint model
+            save(suffix=str(epoch + 1)) 
+            
+            # Controller step
+            if (args.algorithm == 'hyperband') and (args.hyperband_halving):
+                rewards = child.eval_paths(controller.population, mode='val', n=10)
+                
+                controller_update = controller.hyperband_step(rewards, resample=args.hyperband_resample)
+                
+                logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='val')
+                logger.controller_log(epoch=epoch, controller_update=controller_update)
+            
             else:
-                rewards = child.eval_paths(controller.population, mode='test', n=10)
-                logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='test')
+                states = Variable(torch.randn(args.controller_train_paths_per_step, state_dim))
+                actions, log_probs, entropies = controller(states)
+                rewards = child.eval_paths(actions, mode='val', n=10)
+                
+                step_results = controller.reinforce_step(rewards, log_probs=log_probs, entropies=entropies, entropy_penalty=args.entropy_penalty)
+                
+                logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='val', extra=step_results)
     
     logger.close()

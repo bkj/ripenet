@@ -19,6 +19,8 @@ from .controller_helpers import sample_softmax, sample_bernoulli, prep_logits
 
 class Controller(nn.Module):
     def __init__(self, *args, decay=0.9, z_weight=0.0, **kwargs):
+        super().__init__()
+        
         self.decay = decay
         self.z_weight = z_weight
         
@@ -59,9 +61,9 @@ class Controller(nn.Module):
         self.opt.step()
         
         return {
-            "advantages_mean" : advantages.mean(),
-            "loss"            : loss,
-            "entropy_loss"    : entropy_loss if entropies is not None else None,
+            "advantages_mean" : float(to_numpy(advantages.mean())),
+            "loss"            : float(to_numpy(loss)),
+            "entropy_loss"    : float(to_numpy(entropy_loss)) if entropies is not None else None,
         }
     
     def ppo_step(self, rewards, states, actions, entropy_penalty=0.0, clip_eps=0.2, ppo_epochs=4):

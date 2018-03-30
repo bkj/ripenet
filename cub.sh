@@ -4,7 +4,6 @@ iter="cub_4"
 python cub.py \
     --algorithm hyperband \
     --outpath _results/cub/$iter \
-    --controller-eval-interval 1 \
     --child-lr-init 0.01 \
     --epochs 1000 \
     --num-ops 8 \
@@ -16,8 +15,8 @@ python cub.py \
     --child-sgdr-t-mult 1 \
     --hyperband-halving \
     --hyperband-resample \
+    --controller-eval-interval 1 \
     --controller-train-interval 20 \
-    --controller-train-mult 1 \
     --child-train-paths-per-epoch 47 # One epoch w/ 128 batch size
 
 
@@ -25,7 +24,6 @@ iter="reinforce_2"
 python cub.py \
     --algorithm reinforce \
     --outpath _results/cub/$iter \
-    --controller-eval-interval 1 \
     --child-lr-init 0.001 \
     --epochs 1000 \
     --num-ops 6 \
@@ -34,8 +32,9 @@ python cub.py \
     --entropy-penalty 0.05 \
     --child-lr-schedule sgdr \
     --child-sgdr-period-length 20 \
-    --child-sgdr-t-mult 1
-
+    --child-sgdr-t-mult 1 \
+    --controller-eval-interval 1 \
+    --controller-train-interval 1
 
 # --
 # Baselines
