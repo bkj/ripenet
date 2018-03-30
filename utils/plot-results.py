@@ -36,10 +36,15 @@ _ = plt.scatter(steps, rewards, label=os.path.basename(path), s=5, alpha=0.25)
 p25 = pd.Series(rewards).groupby(steps).apply(lambda x: np.percentile(x, 25))
 p50 = pd.Series(rewards).groupby(steps).apply(lambda x: np.percentile(x, 50))
 p75 = pd.Series(rewards).groupby(steps).apply(lambda x: np.percentile(x, 75))
+p90 = pd.Series(rewards).groupby(steps).apply(lambda x: np.percentile(x, 90))
 
 _ = plt.plot(p25, c='red', alpha=0.75)
 _ = plt.plot(p50, c='blue', alpha=0.75)
 _ = plt.plot(p75, c='green', alpha=0.75)
+_ = plt.plot(p90, c='orange', alpha=0.75)
+
+_ = plt.xlim(600, 800)
+_ = plt.ylim(0.5, 0.7)
 
 _ = plt.legend(loc='upper left')
 _ = plt.xlabel('controller_step')
@@ -47,6 +52,7 @@ _ = plt.ylabel('mean_reward')
 _ = plt.title('reward')
 
 show_plot()
+
 
 
 # --

@@ -132,9 +132,6 @@ class MicroLSTMController(Controller, nn.Module):
         return all_actions, all_action_log_probs, all_entropies
 
 
-
-
-
 # --
 # ENAS Macro CNN controller
 # !! This should work, but haven't used it yet 

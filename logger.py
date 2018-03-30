@@ -85,7 +85,7 @@ class HyperbandLogger():
         for v in self.action_files.values():
             v.close()
     
-    def log(self, epoch, rewards, actions, mode='train'):
+    def log(self, epoch, rewards, actions, step_results=None, mode='train', extra=None):
         rewards       = to_numpy(rewards).squeeze()
         actions       = to_numpy(actions).squeeze()
         action_hashes = [str(a) for a in actions]
@@ -106,6 +106,12 @@ class HyperbandLogger():
             ("mean_train_reward", mean_rewards),
             ("max_train_reward",  max_rewards),
         ])
+        
+        if extra is not None:
+            for k,v in extra:
+                assert k not in record, "Logger: k in record.keys()"
+                record[k] = v
+        
         print(json.dumps(record), file=log_file)
         log_file.flush()
         

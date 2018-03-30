@@ -1,25 +1,29 @@
 export CUDA_VISIBLE_DEVICES=1
 
-iter="cub_3"
+iter="cub_4"
 python cub.py \
+    --algorithm hyperband \
     --outpath _results/cub/$iter \
     --controller-eval-interval 1 \
-    --child-lr-init 0.001 \
+    --child-lr-init 0.01 \
     --epochs 1000 \
-    --num-ops 6 \
-    --num-nodes 2 \
+    --num-ops 8 \
+    --num-nodes 3 \
     --seed 678 \
     --population-size 32 \
     --child-lr-schedule sgdr \
-    --child-sgdr-period-length 10 \
+    --child-sgdr-period-length 20 \
     --child-sgdr-t-mult 1 \
     --hyperband-halving \
     --hyperband-resample \
-    --controller-train-interval 10 \
-    --controller-train-mult 1
+    --controller-train-interval 20 \
+    --controller-train-mult 1 \
+    --child-train-paths-per-epoch 47 # One epoch w/ 128 batch size
 
-iter="reinforce_1"
+
+iter="reinforce_2"
 python cub.py \
+    --algorithm reinforce \
     --outpath _results/cub/$iter \
     --controller-eval-interval 1 \
     --child-lr-init 0.001 \
@@ -27,7 +31,7 @@ python cub.py \
     --num-ops 6 \
     --num-nodes 2 \
     --seed 678 \
-    --entropy-penalty 0.1 \
+    --entropy-penalty 0.05 \
     --child-lr-schedule sgdr \
     --child-sgdr-period-length 20 \
     --child-sgdr-t-mult 1
@@ -50,7 +54,7 @@ python cub.py \
 #   'test_test_loss': 2.225614817246147, 'test_test_acc': 0.6316879530548843}
 
 
-# Same, but w/ PreActBlock before
+# Same, but w/ PreActBlock before -- need to do these benchmarks more thoroughly
 # 
 # lr=0.2 constant
 # {'stage': 'classifier_precomputed', 'epoch': 49, 'train_debias_loss': 0.0003051913195044102, 
@@ -65,4 +69,7 @@ python cub.py \
 # {'stage': 'classifier_precomputed', 'epoch': 49, 'train_debias_loss': 0.014071010370408683, 'valid_loss': 1.3808545516087458, 'valid_acc': 0.6430790472903003, 'val_test_loss': 1.3523170157619144, 'val_test_acc': 0.6486020020711081, 'test_test_loss': 1.4257928677227185, 'test_test_acc': 0.6375560925094926}
 # 
 # lr=0.1 sgdr (period=10, tmult=1)
-# {'stage': 'classifier_precomputed', 'epoch': 49, 'train_debias_loss': 0.001318921230616561, 'valid_loss': 1.5961712913198784, 'valid_acc': 0.644977562996203, 'val_test_loss': 1.5686492660771245, 'val_test_acc': 0.6465308940283051, 'test_test_loss': 1.610365092754364, 'test_test_acc': 0.6434242319641008}
+# {'stage': 'classifier_precomputed', 'epoch': 49, 'train_debias_loss': 0.001318921230616561, 
+#   'valid_loss': 1.5961712913198784, 'valid_acc': 0.644977562996203, 
+#   'val_test_loss': 1.5686492660771245, 'val_test_acc': 0.6465308940283051, 
+#   'test_test_loss': 1.610365092754364, 'test_test_acc': 0.6434242319641008}

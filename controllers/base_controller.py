@@ -18,13 +18,16 @@ from .controller_helpers import sample_softmax, sample_bernoulli, prep_logits
 # Controllers
 
 class Controller(object):
-    def get_advantages(self, rewards, decay=0.9):
+    def get_advantages(self, rewards):
         if self.baseline is None:
             self.baseline = rewards.mean()
         else:
-            self.baseline = decay * self.baseline + (1 - decay) * rewards
+            self.baseline = self.decay * self.baseline + (1 - self.decay) * rewards
         
-        return rewards - self.baseline
+        ema_advantage = rewards - self.baseline                    # advantage over EMA
+        z_advantage   = (rewards - rewards.mean()) / rewards.std() # advantage over rest of batch
+        
+        return ((1 - self.z_weight) * ema_advantage) + (self.z_weight * z_advantage)
     
     def reinforce_step(self, rewards, log_probs, entropies, entropy_penalty=0.0):
         """ REINFORCE """
@@ -42,12 +45,20 @@ class Controller(object):
         self.opt.zero_grad()
         
         loss = -(log_probs * advantages).sum()
+        
         if entropies is not None:
-            loss -= entropy_penalty * entropies.sum()
+            entropy_loss = entropy_penalty * entropies.sum()
+            loss -= entropy_loss
         
         loss.backward()
-        # torch.nn.utils.clip_grad_norm(self.parameters(), 40) # !! Is this a reasonable value?
+        torch.nn.utils.clip_grad_norm(self.parameters(), 40) # !! Is this a reasonable value?
         self.opt.step()
+        
+        return {
+            "advantages_mean" : advantages.mean(),
+            "loss"            : loss,
+            "entropy_loss"    : entropy_loss if entropies is not None else None,
+        }
     
     def ppo_step(self, rewards, states, actions, entropy_penalty=0.0, clip_eps=0.2, ppo_epochs=4):
         """ Proximal Policy Optimization """
@@ -83,8 +94,13 @@ class Controller(object):
 # Simple MLP controller
 
 class MLPController(Controller, nn.Module):
-    def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, temperature=1, opt_params={}, cuda=False):
+    def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, temperature=1, 
+        opt_params={}, cuda=False, decay=0.9, z_weight=0.0):
+        
         super(MLPController, self).__init__()
+        
+        self.decay = decay
+        self.z_weight = z_weight
         
         self.output_length   = output_length
         self.output_channels = output_channels
@@ -138,8 +154,13 @@ class BasicStep(nn.Module):
 
 
 class LSTMController(Controller, nn.Module):
-    def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, temperature=1, opt_params={}, cuda=False):
+    def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, temperature=1, 
+        opt_params={}, cuda=False, decay=0.9, z_weight=0.0):
+        
         super(LSTMController, self).__init__()
+        
+        self.decay = decay
+        self.z_weight = z_weight
         
         self.input_dim       = input_dim
         self.output_length   = output_length
