@@ -17,7 +17,7 @@ from .controller_helpers import sample_softmax, sample_bernoulli, prep_logits
 class MicroStep(nn.Module):
     step_length = 4
     def __init__(self, num_ins, num_ops, hidden_dim):
-        super(MicroStep, self).__init__()
+        super().__init__()
         
         self.decoder_in_left = nn.Linear(hidden_dim, num_ins)
         self.decoder_op_left = nn.Linear(hidden_dim, num_ops)
@@ -36,7 +36,7 @@ class MicroStep(nn.Module):
         self.decoder_op_right.bias.data.fill_(0)
 
 
-class MicroLSTMController(Controller, nn.Module):
+class MicroLSTMController(Controller):
     def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, n_input_nodes=1, 
         temperature=1, clip_logits=-1, opt_params={}, cuda=False, **kwargs):
         """
@@ -50,7 +50,7 @@ class MicroLSTMController(Controller, nn.Module):
             opt_params:      optimizer parameters
         """
         
-        super(MicroLSTMController, self).__init__()
+        super().__init__(**kwargs)
         
         self.input_dim       = input_dim
         self.output_length   = output_length

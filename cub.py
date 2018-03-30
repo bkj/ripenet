@@ -21,7 +21,7 @@ from controllers import MicroLSTMController, HyperbandController
 from children import LazyChild, Child
 from workers import CellWorker, BoltWorker
 from data import make_cifar_dataloaders, make_mnist_dataloaders
-from logger import HyperbandLogger
+from logger import Logger
 
 from basenet.helpers import to_numpy, set_seeds
 from basenet.lr import LRSchedule
@@ -243,7 +243,7 @@ if __name__ == "__main__":
     total_controller_steps = 0
     train_rewards, rewards = None, None
     controller_train_interval = args.controller_train_interval
-    logger = HyperbandLogger(args.outpath)
+    logger = Logger(args.outpath)
     
     for epoch in range(args.epochs):
         print(('epoch=%d ' % epoch) + ('-' * 50), file=sys.stderr)

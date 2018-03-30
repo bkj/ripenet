@@ -17,7 +17,11 @@ from .controller_helpers import sample_softmax, sample_bernoulli, prep_logits
 # --
 # Controllers
 
-class Controller(object):
+class Controller(nn.Module):
+    def __init__(self, *args, decay=0.9, z_weight=0.0, **kwargs):
+        self.decay = decay
+        self.z_weight = z_weight
+        
     def get_advantages(self, rewards):
         if self.baseline is None:
             self.baseline = rewards.mean()
@@ -93,11 +97,11 @@ class Controller(object):
 # --
 # Simple MLP controller
 
-class MLPController(Controller, nn.Module):
+class MLPController(Controller):
     def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, temperature=1, 
-        opt_params={}, cuda=False, decay=0.9, z_weight=0.0):
+        opt_params={}, cuda=False, **kwargs):
         
-        super(MLPController, self).__init__()
+        super().__init__(**kwargs)
         
         self.decay = decay
         self.z_weight = z_weight
@@ -144,7 +148,7 @@ class MLPController(Controller, nn.Module):
 
 class BasicStep(nn.Module):
     def __init__(self, output_channels, hidden_dim):
-        super(BasicStep, self).__init__()
+        super().__init__()
         
         self.decoder = nn.Linear(hidden_dim, output_channels)
         self.emb = nn.Embedding(output_channels, hidden_dim)
@@ -153,11 +157,11 @@ class BasicStep(nn.Module):
         self.decoder.bias.data.fill_(0)
 
 
-class LSTMController(Controller, nn.Module):
+class LSTMController(Controller):
     def __init__(self, input_dim=32, output_length=4, output_channels=2, hidden_dim=32, temperature=1, 
-        opt_params={}, cuda=False, decay=0.9, z_weight=0.0):
+        opt_params={}, cuda=False, **kwargs):
         
-        super(LSTMController, self).__init__()
+        super().__init__(**kwargs)
         
         self.decay = decay
         self.z_weight = z_weight
