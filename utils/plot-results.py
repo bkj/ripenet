@@ -1,28 +1,59 @@
 #!/usr/bin/env python
 
+from __future__ import division, print_function
+
 import os
 import sys
 import json
 import numpy as np
+import pandas as pd
 from rsub import *
 from matplotlib import pyplot as plt
 
-all_data = []
-paths = sorted(sys.argv[1:])
-for p in paths:
-    data = list(map(json.loads, open(p).readlines()))
-    
-    mean_reward = [np.mean(d['mean_reward'].values()) for d in data]
-    controller_step = [d['step'] for d in data]
-    
-    _ = plt.plot(controller_step, mean_reward, label=os.path.basename(p), alpha=0.25)
+# --
+# IO
 
+run = 'reinforce_1'
+path = '_results/cub/%s/test.log' % run
+action_path = '_results/cub/%s/train.actions' % run
 
-_ = plt.legend(loc='lower right')
+data = list(map(json.loads, open(path).readlines()))
+
+actions = pd.read_csv(action_path, header=None, sep='\t')
+actions.columns = ['mode', 'epoch', 'score'] + list(range(actions.shape[1] - 4)) + ['aid']
+
+# --
+# Plot
+
+rewards, steps = [], []
+for d in data:
+    for reward in d['mean_reward'].values():
+        rewards.append(reward)
+        steps.append(d['step'])
+
+_ = plt.scatter(steps, rewards, label=os.path.basename(path), s=5, alpha=0.25)
+
+p25 = pd.Series(rewards).groupby(steps).apply(lambda x: np.percentile(x, 25))
+p50 = pd.Series(rewards).groupby(steps).apply(lambda x: np.percentile(x, 50))
+p75 = pd.Series(rewards).groupby(steps).apply(lambda x: np.percentile(x, 75))
+
+_ = plt.plot(p25, c='red', alpha=0.75)
+_ = plt.plot(p50, c='blue', alpha=0.75)
+_ = plt.plot(p75, c='green', alpha=0.75)
+
+_ = plt.legend(loc='upper left')
 _ = plt.xlabel('controller_step')
 _ = plt.ylabel('mean_reward')
+_ = plt.title('reward')
 
-for i in np.linspace(0.90, 1.0, 6):
-    _ = plt.axhline(i, c='grey', alpha=0.1)
+show_plot()
 
+
+# --
+#
+
+ucount = actions.groupby('epoch').aid.apply(lambda x: len(set(x)) / len(x))
+_ = plt.plot(ucount, c='red')
+_ = plt.ylim(0, 1)
+_ = plt.title('num_unique_arch / num_arch')
 show_plot()

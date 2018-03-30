@@ -19,7 +19,7 @@ from torch.autograd import Variable
 
 from controllers import MicroLSTMController, HyperbandController
 from children import LazyChild, Child
-from workers import CellWorker
+from workers import CellWorker, BoltWorker
 from data import make_cifar_dataloaders, make_mnist_dataloaders
 from logger import HyperbandLogger
 
@@ -41,10 +41,10 @@ def parse_args():
     parser.add_argument('--algorithm', type=str, default='ppo', choices=['reinforce', 'ppo', 'hyperband'])
     
     parser.add_argument('--epochs', type=int, default=20)  #
-    parser.add_argument('--child-train-paths-per-epoch', type=int, default=352)     # Number of paths to use to train child network each epoch
-    parser.add_argument('--controller-train-steps-per-epoch', type=int, default=4)  # Number of times to call RL step on controller per epoch
-    parser.add_argument('--controller-train-paths-per-step', type=int, default=50)  # Number of paths to use to train controller per step
-    parser.add_argument('--controller-eval-paths-per-epoch', type=int, default=352) # Number of paths to sample to quantify performance
+    parser.add_argument('--child-train-paths-per-epoch', type=int, default=200)      # Number of paths to use to train child network each epoch
+    # parser.add_argument('--controller-train-steps-per-epoch', type=int, default=4) # Number of times to call RL step on controller per epoch
+    parser.add_argument('--controller-train-paths-per-step', type=int, default=50)   # Number of paths to use to train controller per step
+    parser.add_argument('--controller-eval-paths-per-epoch', type=int, default=32)   # Number of paths to sample to quantify performance
     
     parser.add_argument('--controller-train-interval', type=int, default=1)         # Frequency of controller steps (in epochs)
     parser.add_argument('--controller-eval-interval', type=int, default=1)          # Frequency of running on test set (in epochs)
@@ -80,31 +80,76 @@ def parse_args():
 # >>
 # Worker
 
-sys.path.append('/home/bjohnson/ftune/')
-from layers import AdaptiveMultiPool2d, Flatten
+import h5py
 
-sys.path.append('/home/bjohnson/ripenet/workers/')
-from cell_worker import _CellWorker, CellBlock
+class H5Dataset(torch.utils.data.Dataset):
+    def __init__(self, h5_path):
+        self.h5_path = h5_path
+        self.length = len(h5py.File(h5_path, 'r'))
+    
+    def __getitem__(self, index):
+        h5_file = h5py.File(self.h5_path, 'r')
+        
+        record = h5_file[str(index)]
+        res = (
+            torch.from_numpy(record['data'].value),
+            record['target'].value,
+        )
+        
+        h5_file.close()
+        return res
+        
+    def __len__(self):
+        return self.length
 
-def BoltWorker(_CellWorker):
+sys.path.append('/home/bjohnson/projects/ripenet/workers/')
+from glob import glob
+
+def get_precomputed_loaders(cache='/home/bjohnson/projects/ftune/_results/precomputed/conv', 
+        batch_size=128, shuffle=True, num_workers=8, **kwargs):
     
-    def __init__(self, num_features, num_classes=200, num_nodes=2, num_branches=2):
-        
-        self.layers = nn.Sequential(*[
-            CellBlock(in_channels=num_features, out_channels=num_features, num_nodes=num_nodes, num_branches=num_branches),
-        ])
-        
-        self.classifier = nn.Sequential(*[
-            AdaptiveMultiPool2d(output_size=(1, 1)),
-            Flatten(),
-            nn.Linear(in_features=num_features, out_features=num_classes),
-            nn.LogSoftmax(),
-        ])
+    kwargs.update({
+        "batch_size"  : batch_size,
+        "shuffle"     : shuffle,
+        "num_workers" : num_workers,
+    })
     
-    def forward(self, x):
-        x = self.layers(x)
-        x = self.classifier(x)
-        return x
+    loaders = {}
+    for cache_path in glob(os.path.join(cache, '*.h5')):
+        print("get_precomputed_loaders: loading cache %s" % cache_path, file=sys.stderr)
+        cache_name = os.path.basename(cache_path).split('.')[0]
+        loaders[cache_name] = torch.utils.data.DataLoader(H5Dataset(cache_path), **kwargs)
+    
+    return loaders
+
+# # >>
+# import h5py
+# from sklearn.model_selection import train_test_split
+# f = h5py.File('/home/bjohnson/projects/ftune/_results/precomputed/conv/val.h5')
+
+# lookup = [(k, v['target'].value) for k,v in f.items()]
+# idx, lab = list(zip(*lookup))
+
+# train_idx, test_idx = train_test_split(idx, train_size=0.5, stratify=lab, random_state=123)
+
+# val_test = h5py.File('/home/bjohnson/projects/ftune/_results/precomputed/conv/val_test.h5')
+# for i, idx in enumerate(train_idx):
+#     val_test['%s/data' % i] = f[idx]['data'].value
+#     val_test['%s/target' % i] = f[idx]['target'].value
+
+# test_test = h5py.File('/home/bjohnson/projects/ftune/_results/precomputed/conv/test_test.h5')
+# for i, idx in enumerate(test_idx):
+#     test_test['%s/data' % i] = f[idx]['data'].value
+#     test_test['%s/target' % i] = f[idx]['target'].value
+
+# val_test.flush()
+# val_test.close()
+# test_test.flush()
+# test_test.close()
+
+# test_test = h5py.File('/home/bjohnson/projects/ftune/_results/precomputed/conv/test_test.h5')
+# [val_test[i]['data'].value.shape for i in train_idx]
+# # <<
 
 # <<
 
@@ -123,7 +168,14 @@ if __name__ == "__main__":
     # --
     # IO
     
-    # dataloaders = ...
+    print('get_precomputed_loaders', file=sys.stderr)
+    dataloaders = get_precomputed_loaders()
+    dataloaders = {
+        "train"  : dataloaders['train_fixed'],
+        "val"    : dataloaders['val_test'],
+        "test"   : dataloaders['test_test'],
+    }
+    print('dataloaders.keys() ->', list(dataloaders.keys()), file=sys.stderr)
     
     # --
     # Controller
@@ -131,12 +183,22 @@ if __name__ == "__main__":
     controller_args = {
         "output_length" : args.num_nodes,
         "output_channels" : args.num_ops,
+        # RL parameters
+        "input_dim" : state_dim,
+        "temperature" : args.temperature,
+        "clip_logits" : args.clip_logits,
+        "opt_params" : {
+            "lr" : args.controller_lr,
+        },
         # Hyperband parameters
         "population_size" : args.population_size,
     }
     
-    controller = HyperbandController(**controller_args)
-    print("controller.population ->\n", controller.population, file=sys.stderr)
+    if args.algorithm == 'hyperband':
+        controller = HyperbandController(**controller_args)
+        print("controller.population ->\n", controller.population, file=sys.stderr)
+    else:
+        controller = MicroLSTMController(**controller_args)
     
     # --
     # Worker
@@ -169,18 +231,19 @@ if __name__ == "__main__":
         params=filter(lambda x: x.requires_grad, worker.parameters()),
         lr_scheduler=lr_scheduler,
         momentum=0.9,
-        weight_decay=5e-4
+        weight_decay=5e-4,
+        clip_grad_norm=1e3,
     )
     
     child = Child(worker=worker, dataloaders=dataloaders)
-        
+    
     # --
     # Run
     
     total_controller_steps = 0
     train_rewards, rewards = None, None
     controller_train_interval = args.controller_train_interval
-
+    
     logger = HyperbandLogger(args.outpath)
     
     for epoch in range(args.epochs):
@@ -198,25 +261,41 @@ if __name__ == "__main__":
         # Train controller
         
         if not (epoch + 1) % controller_train_interval:
-            if args.hyperband_halving:
+            if args.algorithm == 'hyperband':
+                if args.hyperband_halving:
+                    total_controller_steps += 1
+                    
+                    save(suffix=str(epoch + 1)) # Checkpoint model
+                    
+                    rewards = child.eval_paths(controller.population, mode='val', n=5)
+                    logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='val')
+                    
+                    controller_update = controller.hyperband_step(rewards, resample=args.hyperband_resample)
+                    
+                    # Update controller train interval
+                    controller_train_interval = sum([args.controller_train_interval * (args.controller_train_mult ** i) for i in range(total_controller_steps + 1)])
+                    logger.controller_log(epoch=epoch, controller_update=controller_update)
+            else:
                 total_controller_steps += 1
                 
-                save(suffix=str(epoch + 1)) # Checkpoint model
+                states = Variable(torch.randn(args.controller_train_paths_per_step, state_dim))
+                actions, log_probs, entropies = controller(states)
+                rewards = child.eval_paths(actions, mode='val', n=10)
+                logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='val')
                 
-                rewards = child.eval_paths(controller.population, mode='val', n=10)
-                logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='val')
-                
-                controller_update = controller.hyperband_step(rewards, resample=args.hyperband_resample)
-                
-                # Update controller train interval
-                controller_train_interval = sum([args.controller_train_interval * (args.controller_train_mult ** i) for i in range(total_controller_steps + 1)])
-                logger.controller_log(epoch=epoch, controller_update=controller_update)
+                controller.reinforce_step(rewards, log_probs=log_probs, entropies=entropies, entropy_penalty=args.entropy_penalty)
         
         # --
         # Eval best architecture on test set
         
         if not (epoch + 1) % args.controller_eval_interval:
-            rewards = child.eval_paths(controller.population, mode='test', n=10)
-            logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='test')
+            if args == 'hyperband':
+                rewards = child.eval_paths(controller.population, mode='test', n=1)
+                logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='test')
+            else:
+                states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
+                actions, _, _ = controller(states)
+                rewards = child.eval_paths(actions, mode='test', n=1)
+                logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='test')
     
     logger.close()

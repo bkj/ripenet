@@ -237,10 +237,10 @@ if __name__ == "__main__":
         
         if not (epoch + 1) % args.controller_eval_interval:
             if args.algorithm != 'hyperband':
-                    states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
-                    actions, _, _ = controller(states)
-                    rewards = child.eval_paths(actions, mode='test')
-                    logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='test')
+                states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
+                actions, _, _ = controller(states)
+                rewards = child.eval_paths(actions, mode='test')
+                logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='test')
             else:
                 rewards = child.eval_paths(controller.population, mode='test', n=10)
                 logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='test')
