@@ -6,6 +6,7 @@
 
 from __future__ import print_function, division
 
+import sys
 import numpy as np
 from dask import get
 from dask.optimize import cull
@@ -27,7 +28,7 @@ from .helpers import InvalidGraphException
 
 class PipeModule(nn.Module):
     def __init__(self, needs_path=False):
-        super(PipeModule, self).__init__()
+        super().__init__()
         self.needs_path = needs_path
     
     def set_pipes(self, pipes):
@@ -36,7 +37,7 @@ class PipeModule(nn.Module):
 
 class Accumulator(PipeModule):
     def __init__(self, agg_fn=torch.sum, name='noname'):
-        super(Accumulator, self).__init__()
+        super().__init__()
         
         self.agg_fn = agg_fn
         self.name = name
@@ -59,49 +60,51 @@ class Flatten(PipeModule):
     def __repr__(self):
         return "Flatten()"
 
-
-# class PipeBatchNorm2d(PipeModule):
-#     def __init__(self, *args, **kwargs):
-#         super(PipeBatchNorm2d, self).__init__(needs_path=True)
+SHARED_BN = True
+print('******** SHARED_BN=%d ********' % SHARED_BN, file=sys.stderr)
+if not SHARED_BN:
+    class PipeBatchNorm2d(PipeModule):
+        def __init__(self, *args, **kwargs):
+            super().__init__(needs_path=True)
+            
+            self.make_new_layer = lambda: nn.BatchNorm2d(*args, **kwargs).cuda()
+            
+            self.layers = {}
+            self.active_path = None
         
-#         self.make_new_layer = lambda: nn.BatchNorm2d(*args, **kwargs).cuda()
+        def set_path(self, path, callback):
+            path_desc = str(tuple(path))
+            if path_desc not in self.layers:
+                new_layer = self.make_new_layer()        # Create new layer
+                self.layers[path_desc] = new_layer       # Add to dict
+                self.add_module(path_desc, new_layer)    # Register
+                callback(mode='bn', new_layer=new_layer)
+            
+            self.active_path = path_desc
         
-#         self.layers = {}
-#         self.active_path = None
-    
-#     def set_path(self, path, callback):
-#         path_desc = str(tuple(path))
-#         if path_desc not in self.layers:
-#             new_layer = self.make_new_layer()        # Create new layer
-#             self.layers[path_desc] = new_layer       # Add to dict
-#             self.add_module(path_desc, new_layer)    # Register
-#             callback(mode='bn', new_layer=new_layer)
+        def forward(self, x):
+            assert self.active_path is not None, "!! PipeBatchNorm2d: active_path is None"
+            return self.layers[self.active_path](x)
+else:
+    class PipeBatchNorm2d(PipeModule):
+        def __init__(self, *args, **kwargs):
+            super().__init__(needs_path=True)
+            
+            kwargs.update({
+                "track_running_stats" : False,
+            })
+            self.layer = nn.BatchNorm2d(*args, **kwargs).cuda()
+            
+        def set_path(self, path, callback):
+            pass
         
-#         self.active_path = path_desc
-    
-#     def forward(self, x):
-#         assert self.active_path is not None, "!! PipeBatchNorm2d: active_path is None"
-#         return self.layers[self.active_path](x)
-
-class PipeBatchNorm2d(PipeModule):
-    def __init__(self, *args, **kwargs):
-        super(PipeBatchNorm2d, self).__init__(needs_path=True)
-        
-        kwargs.update({
-            "track_running_stats" : False,
-        })
-        self.layer = nn.BatchNorm2d(*args, **kwargs).cuda()
-        
-    def set_path(self, path, callback):
-        pass
-    
-    def forward(self, x):
-        return self.layer(x)
+        def forward(self, x):
+            return self.layer(x)
 
 
 class IdentityLayer(PipeModule):
     def __init__(self, in_channels, out_channels, stride=1):
-        super(IdentityLayer, self).__init__(needs_path=(in_channels != out_channels))
+        super().__init__(needs_path=(in_channels != out_channels))
         
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -129,7 +132,7 @@ class IdentityLayer(PipeModule):
 
 class NoopLayer(PipeModule):
     def __init__(self, in_channels, out_channels, stride=1):
-        super(NoopLayer, self).__init__()
+        super().__init__()
         
         self.in_channels  = in_channels
         self.out_channels = out_channels
@@ -148,7 +151,7 @@ class NoopLayer(PipeModule):
 
 class BNConv2d(PipeModule):
     def __init__(self, in_channels, out_channels, **kwargs):
-        super(BNConv2d, self).__init__(needs_path=True)
+        super().__init__(needs_path=True)
         
         self.add_module('bn', PipeBatchNorm2d(in_channels))
         self.add_module('relu', nn.ReLU())
@@ -166,7 +169,7 @@ class BNConv2d(PipeModule):
 
 class ReshapePool2d(PipeModule):
     def __init__(self, in_channels, out_channels, mode='avg', **kwargs):
-        super(ReshapePool2d, self).__init__()
+        super().__init__()
         
         self.in_channels  = in_channels
         self.out_channels = out_channels
@@ -196,7 +199,7 @@ class BNSepConv2d(BNConv2d):
     def __init__(self, **kwargs):
         assert 'groups' not in kwargs, "BNSepConv2d: cannot specify groups"
         kwargs['groups'] = min(kwargs['in_channels'], kwargs['out_channels'])
-        super(BNSepConv2d, self).__init__(**kwargs)
+        super().__init__(**kwargs)
     
     def __repr__(self):
         return 'BNSep' + self.conv.__repr__()
@@ -207,7 +210,7 @@ class BNSepConv2d(BNConv2d):
 
 class CellBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, num_nodes=2, num_branches=2):
-        super(CellBlock, self).__init__()
+        super().__init__()
         
         self.num_nodes = num_nodes
         
@@ -398,10 +401,9 @@ class _CellWorker(basenet.BaseNet):
         return np.all([cell_block.is_valid for cell_block in self.cell_blocks])
 
 
-AVG_CLASSIFIER = False
 class CellWorker(_CellWorker):
     def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[32, 64, 128, 256, 512], num_nodes=2):
-        super(CellWorker, self).__init__()
+        super().__init__()
         
         self.num_nodes = num_nodes
         
@@ -427,34 +429,23 @@ class CellWorker(_CellWorker):
             all_layers.append(nn.Sequential(*layers))
         
         self.layers = nn.Sequential(*all_layers)
-        if AVG_CLASSIFIER:
-            # self.classifier = nn.Sequential(
-            #     BNConv2d(in_channels=num_channels[-1], out_channels=num_classes, kernel_size=1, padding=0, stride=1),
-            #     nn.AdaptiveAvgPool2d((1, 1)),
-            # )
-            raise Exception
-        else:
-            self.linear = nn.Linear(num_channels[-1], num_classes)
+        
+        self.classifier = nn.Linear(num_channels[-1], num_classes)
     
     def forward(self, x):
         x = self.prep(x)
         x = self.layers(x)
         
-        if AVG_CLASSIFIER:
-            # x = self.classifier(x)
-            # x = x.view((x.shape[0], x.shape[1]))
-            raise Exception
-        else:
-            x = F.adaptive_avg_pool2d(x, (1, 1))
-            x = x.view(x.size(0), -1)
-            x = self.linear(x)
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
         
         return x
 
 from .layers import AdaptiveMultiPool2d, Flatten
 class BoltWorker(_CellWorker):
     def __init__(self, num_features=512, num_classes=200, num_nodes=2, num_branches=2):
-        super(BoltWorker, self).__init__(loss_fn=F.nll_loss)
+        super().__init__(loss_fn=F.nll_loss)
         
         self.cell_blocks = [
             CellBlock(in_channels=num_features, out_channels=num_features, num_nodes=num_nodes, num_branches=num_branches),

@@ -35,20 +35,22 @@ np.set_printoptions(linewidth=120)
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--outpath', type=str, required=True)
-    parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'fashion_mnist', 'mnist'])
     
-    parser.add_argument('--child', type=str, default='child', choices=['lazy_child', 'child'])
     parser.add_argument('--algorithm', type=str, default='ppo', choices=['reinforce', 'ppo', 'hyperband'])
     
     parser.add_argument('--epochs', type=int, default=20)  #
     parser.add_argument('--child-train-paths-per-epoch', type=int, default=200)      # Number of paths to use to train child network each epoch
     # parser.add_argument('--controller-train-steps-per-epoch', type=int, default=4) # Number of times to call RL step on controller per epoch
-    parser.add_argument('--controller-train-paths-per-step', type=int, default=50)   # Number of paths to use to train controller per step
-    parser.add_argument('--controller-eval-paths-per-epoch', type=int, default=32)   # Number of paths to sample to quantify performance
     
-    parser.add_argument('--controller-train-interval', type=int, default=1)         # Frequency of controller steps (in epochs)
-    parser.add_argument('--controller-eval-interval', type=int, default=1)          # Frequency of running on test set (in epochs)
-    parser.add_argument('--controller-train-mult', type=int, default=1)             # Increase train interval over time?
+    parser.add_argument('--controller-train-paths-per-step',   type=int, default=50)   # Number of paths to use to train controller per step
+    parser.add_argument('--controller-eval-paths-per-epoch',   type=int, default=32)   # Number of paths to sample to quantify performance
+    parser.add_argument('--controller-predict-paths-per-step', type=int, default=128)   # Number of paths to sample to quantify performance
+    
+    parser.add_argument('--controller-train-interval',   type=int, default=1)         # Frequency of controller steps (in epochs)
+    parser.add_argument('--controller-eval-interval',    type=int, default=1)         # Frequency of running on test set (in epochs)
+    parser.add_argument('--controller-predict-interval', type=int, default=20)        # Frequency of running on test set (in epochs)
+    
+    parser.add_argument('--controller-train-mult',       type=int, default=1)         # Increase train interval over time?
     
     parser.add_argument('--num-ops', type=int, default=6)   # Number of ops to sample
     parser.add_argument('--num-nodes', type=int, default=2) # Number of cells to sample
@@ -72,6 +74,8 @@ def parse_args():
     
     parser.add_argument('--train-size', type=float, default=0.9)     # Proportion of training data to use for training (vs validation) 
     parser.add_argument('--pretrained-path', type=str, default=None)
+    
+    parser.add_argument('--reset-model-interval', type=int, default=-1)
     
     parser.add_argument('--seed', type=int, default=123)
     
@@ -203,8 +207,9 @@ if __name__ == "__main__":
     # --
     # Worker
     
+    set_seeds(args.seed)
     worker = BoltWorker(num_nodes=args.num_nodes).cuda()
-        
+    
     if args.pretrained_path is not None:
         print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
         worker.load_state_dict(torch.load(args.pretrained_path))
@@ -217,8 +222,6 @@ if __name__ == "__main__":
     
     # --
     # Child
-    
-    print('main.py: child -> %s' % args.child, file=sys.stderr)
     
     lr_scheduler = getattr(LRSchedule, args.child_lr_schedule)(
         lr_init=args.child_lr_init,
@@ -265,7 +268,9 @@ if __name__ == "__main__":
                 states = Variable(torch.randn(args.controller_eval_paths_per_epoch, state_dim))
                 actions, _, _ = controller(states)
                 rewards = child.eval_paths(actions, mode='test', n=1)
-                logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='test', extra={"n" : 1})
+                logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='test', extra={
+                    "n" : 1
+                })
         
         if (not (epoch + 1) % args.controller_eval_interval) and ((epoch + 1) % controller_train_interval):
             do_eval(n=1)
@@ -276,14 +281,14 @@ if __name__ == "__main__":
             total_controller_steps += 1
             
             # Change frequency of controller updates (maybe)
-            controller_train_interval = sum([args.controller_train_interval * (args.controller_train_mult ** i) 
-                for i in range(total_controller_steps + 1)])
+            # controller_train_interval = sum([args.controller_train_interval * (args.controller_train_mult ** i) 
+            #     for i in range(total_controller_steps + 1)])
             
             # Log test loss w/ low(er) variance
             do_eval(n=10)
             
             # Checkpoint model
-            save(suffix=str(epoch + 1)) 
+            save(suffix='most_recent') 
             
             # Controller step
             if (args.algorithm == 'hyperband') and (args.hyperband_halving):
@@ -293,7 +298,7 @@ if __name__ == "__main__":
                 
                 logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='val')
                 logger.controller_log(epoch=epoch, controller_update=controller_update)
-            
+                
             else:
                 states = Variable(torch.randn(args.controller_train_paths_per_step, state_dim))
                 actions, log_probs, entropies = controller(states)
@@ -302,5 +307,50 @@ if __name__ == "__main__":
                 step_results = controller.reinforce_step(rewards, log_probs=log_probs, entropies=entropies, entropy_penalty=args.entropy_penalty)
                 
                 logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='val', extra=step_results)
+        
+        # Take top-k models on validation set, log performance on test set
+        if (not (epoch + 1) % args.controller_predict_interval):
+            val_n, test_n, topk = 16, 32, 5
+            if args.algorithm != 'hyperband':
+                states = Variable(torch.randn(args.controller_predict_paths_per_step, state_dim))
+                actions, _, _ = controller(states)
+            else:
+                actions = controller.population
+            
+            # apply topk on val to test
+            topk_idx = child.eval_paths(actions, mode='val', n=val_n).squeeze().topk(topk)[1]
+            rewards  = child.eval_paths(actions[topk_idx], mode='test', n=test_n)
+            
+            logger.log(epoch=epoch, rewards=rewards, actions=actions[topk_idx], mode='test', extra={
+                "predict"      : True,
+                "topk"         : topk,
+                "test_n"       : test_n,
+                "val_n"        : val_n, 
+                "action_order" : [str(action) for action in to_numpy(actions[topk_idx])]
+            })
+        
+        # >>
+        # Reset model
+        if args.reset_model_interval > 0:
+            if not (epoch + 1) % args.reset_model_interval:
+                print('------ new model ------', file=sys.stderr)
+                set_seeds(args.seed)
+                worker = BoltWorker(num_nodes=args.num_nodes).cuda()
+                lr_scheduler = getattr(LRSchedule, args.child_lr_schedule)(
+                    lr_init=args.child_lr_init,
+                    epochs=args.child_lr_epochs,
+                    period_length=args.child_sgdr_period_length,
+                    t_mult=args.child_sgdr_t_mult,
+                )
+                worker.init_optimizer(
+                    opt=torch.optim.SGD,
+                    params=filter(lambda x: x.requires_grad, worker.parameters()),
+                    lr_scheduler=lr_scheduler,
+                    momentum=0.9,
+                    weight_decay=5e-4,
+                    clip_grad_norm=1e3,
+                )
+                child.worker = worker
+        # <<
     
     logger.close()

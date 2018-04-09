@@ -12,6 +12,7 @@ from torch import nn
 from torch.autograd import Variable
 from torch.nn import functional as F
 
+from basenet.helpers import to_numpy
 from .controller_helpers import sample_softmax, sample_bernoulli, prep_logits
 
 # --

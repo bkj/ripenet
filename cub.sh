@@ -1,44 +1,57 @@
 export CUDA_VISIBLE_DEVICES=1
 
-iter="cub_4"
+iter="cub_8"
 python cub.py \
-    --algorithm hyperband \
     --outpath _results/cub/$iter \
+    \
+    --algorithm hyperband \
+    --hyperband-halving \
+    --hyperband-resample \
+    --population-size 32 \
+    \
+    --child-lr-init 0.1 \
+    --child-lr-schedule sgdr \
+    --child-sgdr-period-length 20 \
+    --child-sgdr-t-mult 1 \
+    \
+    --controller-eval-interval 1 \
+    --controller-train-interval 20 \
+    --child-train-paths-per-epoch 47 \
+    \
+    --epochs 310 \
+    --num-ops 8 \
+    --num-nodes 3 \
+    --seed 123
+
+
+iter="reinforce_7"
+CUDA_VISIBLE_DEVICES=1 python cub.py \
+    --outpath _results/cub/$iter \
+    \
+    --algorithm reinforce \
+    --entropy-penalty 0.05 \
+    --temperature 2 \
+    \
     --child-lr-init 0.01 \
+    --child-lr-schedule sgdr \
+    --child-sgdr-period-length 20 \
+    --child-sgdr-t-mult 1 \
+    \
+    --controller-eval-interval 1 \
+    --controller-train-interval 1 \
+    --child-train-paths-per-epoch 100 \
+    --controller-eval-paths-per-epoch 128 \
+    \
     --epochs 1000 \
     --num-ops 8 \
     --num-nodes 3 \
-    --seed 678 \
-    --population-size 32 \
-    --child-lr-schedule sgdr \
-    --child-sgdr-period-length 20 \
-    --child-sgdr-t-mult 1 \
-    --hyperband-halving \
-    --hyperband-resample \
-    --controller-eval-interval 1 \
-    --controller-train-interval 20 \
-    --child-train-paths-per-epoch 47 # One epoch w/ 128 batch size
+    --seed 123 \
+    \
+    --reset-model-interval 20
 
-
-iter="reinforce_2"
-python cub.py \
-    --algorithm reinforce \
-    --outpath _results/cub/$iter \
-    --child-lr-init 0.001 \
-    --epochs 1000 \
-    --num-ops 6 \
-    --num-nodes 2 \
-    --seed 678 \
-    --entropy-penalty 0.05 \
-    --child-lr-schedule sgdr \
-    --child-sgdr-period-length 20 \
-    --child-sgdr-t-mult 1 \
-    --controller-eval-interval 1 \
-    --controller-train-interval 1
 
 # --
 # Baselines
-
 
 # lr=0.2 constant
 # 
@@ -62,10 +75,16 @@ python cub.py \
 #   'test_test_loss': 1.9307441452275151, 'test_test_acc': 0.6444597859855022}
 # 
 # lr=0.001 sgdr (period=10, tmult=1)
-# {'stage': 'classifier_precomputed', 'epoch': 49, 'train_debias_loss': 0.9247510357391342, 'valid_loss': 1.6575793840072968, 'valid_acc': 0.5973420780117363, 'val_test_loss': 1.642517986504928, 'val_test_acc': 0.5954435623058336, 'test_test_loss': 1.6683286609856978, 'test_test_acc': 0.5992405937176389}
+# {'stage': 'classifier_precomputed', 'epoch': 49, 'train_debias_loss': 0.9247510357391342, 
+# 'valid_loss': 1.6575793840072968, 'valid_acc': 0.5973420780117363, 
+# 'val_test_loss': 1.642517986504928, 'val_test_acc': 0.5954435623058336, 
+# 'test_test_loss': 1.6683286609856978, 'test_test_acc': 0.5992405937176389}
 #
 # lr=0.01 sgdr (period=10, tmult=1)
-# {'stage': 'classifier_precomputed', 'epoch': 49, 'train_debias_loss': 0.014071010370408683, 'valid_loss': 1.3808545516087458, 'valid_acc': 0.6430790472903003, 'val_test_loss': 1.3523170157619144, 'val_test_acc': 0.6486020020711081, 'test_test_loss': 1.4257928677227185, 'test_test_acc': 0.6375560925094926}
+# {'stage': 'classifier_precomputed', 'epoch': 49, 'train_debias_loss': 0.014071010370408683, 
+# 'valid_loss': 1.3808545516087458, 'valid_acc': 0.6430790472903003, 
+# 'val_test_loss': 1.3523170157619144, 'val_test_acc': 0.6486020020711081, 
+# 'test_test_loss': 1.4257928677227185, 'test_test_acc': 0.6375560925094926}
 # 
 # lr=0.1 sgdr (period=10, tmult=1)
 # {'stage': 'classifier_precomputed', 'epoch': 49, 'train_debias_loss': 0.001318921230616561, 
