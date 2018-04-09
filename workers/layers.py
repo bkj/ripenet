@@ -9,6 +9,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
+# From `fastai`
 class AdaptiveMultiPool2d(nn.Module):
     def __init__(self, output_size=(1, 1), op_fns=[F.adaptive_avg_pool2d, F.adaptive_max_pool2d]):
         super(AdaptiveMultiPool2d, self).__init__()

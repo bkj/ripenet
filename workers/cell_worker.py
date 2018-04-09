@@ -21,7 +21,9 @@ from torch.autograd import Variable
 import basenet
 from basenet.helpers import to_numpy
 
-from .helpers import InvalidGraphException
+
+class InvalidGraphException(Exception):
+    pass
 
 # --
 # Helper layers
