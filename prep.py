@@ -7,6 +7,7 @@
 from __future__ import print_function
 
 import os
+import sys
 import argparse
 import numpy as np
 
@@ -14,7 +15,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--num-nodes', type=int, default=2)   # Number of ops to sample
-    parser.add_argument('--num-ops', type=int, default=6) # Number of cells to sample
+    parser.add_argument('--num-ops', type=int, default=7) # Number of cells to sample
     parser.add_argument('--population-size', type=int, default=80) 
     
     parser.add_argument('--run', type=str, default='runs/run0')
@@ -44,7 +45,7 @@ if __name__ == "__main__":
     if not os.path.exists(args.run):
         os.makedirs(args.run)
     
-    base_cmd = ['#!/bin/bash\n'] + ['./run-%d.sh &&' % gpu_id for gpu_id in range(args.num_gpus)] + ['\n\n']
+    base_cmd = ['#!/bin/bash\n'] + ['./run-%d.sh &' % gpu_id for gpu_id in range(args.num_gpus)] + ['wait; echo done\n\n']
     open(os.path.join(args.run, 'run.sh'), 'w').write('\n'.join(base_cmd))
     
     population = initialize_population(
@@ -52,10 +53,12 @@ if __name__ == "__main__":
         num_ops=args.num_ops,
         population_size=args.population_size,
     )
+    population = np.vstack(set([tuple(arch) for arch in population]))
+    print(population.shape, file=sys.stderr)
     
     for gpu_id, chunk in enumerate(np.array_split(population, args.num_gpus)):
         file = open(os.path.join(args.run, 'run-%d.sh' % gpu_id), 'w')
         for arch in chunk:
             arch = ''.join(map(str, arch))
-            print('CUDA_VISIBLE_DEVICES=%d python train.py --architecture %s --outpath %s' % 
-                (gpu_id, arch, os.path.join(args.run, 'results/')), file=file)
+            print('CUDA_VISIBLE_DEVICES=%d python %s/train.py --architecture %s --outpath %s' % 
+                (gpu_id, os.getcwd(), arch, os.path.join(os.getcwd(), args.run, 'results/')), file=file)

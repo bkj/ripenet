@@ -10,6 +10,7 @@ import sys
 import json
 import argparse
 import numpy as np
+from datetime import datetime
 from collections import OrderedDict
 
 import torch
@@ -36,7 +37,7 @@ def parse_args():
     
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr-schedule', type=str, default='linear_cycle')
-    parser.add_argument('--lr-init', type=float, default=0.1)
+    parser.add_argument('--lr-max', type=float, default=0.1)
     
     parser.add_argument('--output-length', type=int, default=2)   # Number of ops to sample
     
@@ -53,6 +54,11 @@ if __name__ == "__main__":
     args = parse_args()
     set_seeds(args.seed)
     
+    if not os.path.exists(args.outpath):
+        os.makedirs(args.outpath)
+    
+    mid = '%s_%s' % (args.architecture, datetime.now().strftime('%s'))
+    
     # --
     # IO
     
@@ -65,7 +71,7 @@ if __name__ == "__main__":
     # Model
     
     worker = CellWorker(num_nodes=args.output_length).cuda()
-    worker.verbose = True
+    # worker.verbose = True
     
     # if args.pretrained_path is not None:
     #     print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
@@ -74,7 +80,7 @@ if __name__ == "__main__":
     # --
     # Training options
     
-    lr_scheduler = getattr(HPSchedule, args.lr_schedule)(lr_init=args.lr_init, epochs=args.epochs)
+    lr_scheduler = getattr(HPSchedule, args.lr_schedule)(hp_max=args.lr_max, epochs=args.epochs)
     worker.init_optimizer(
         opt=torch.optim.SGD,
         params=filter(lambda x: x.requires_grad, worker.parameters()),
@@ -93,20 +99,20 @@ if __name__ == "__main__":
     worker.set_path(architecture)
     worker.trim_pipes()
     
-    print(worker, file=sys.stderr)
+    # print(worker, file=sys.stderr)
     
     cell_pipes = worker.get_pipes()[0]
     config = vars(args)
-    print('pipes ->', cell_pipes, file=sys.stderr)
+    # print('pipes ->', cell_pipes, file=sys.stderr)
     config['_pipes'] = cell_pipes
-    json.dump(config, open('%s.%s.config' % (args.outpath, args.architecture), 'w'))
+    json.dump(config, open(os.path.join(args.outpath, '%s.config' % mid), 'w'))
     
     # --
     # Run
     
     print('train_cell_worker: run', file=sys.stderr)
     
-    logfile = open(args.outpath + '.log', 'w')
+    logfile = open(os.path.join(args.outpath, '%s.log' % mid), 'w')
     
     for epoch in range(args.epochs):
         print('epoch=%d' % epoch, file=sys.stderr)
@@ -123,5 +129,5 @@ if __name__ == "__main__":
     
     logfile.close()
     
-    worker.save("%s.%s.weights" % (args.outpath, args.architecture))
+    worker.save(os.path.join(args.outpath, "%s.weights" % mid))
 
