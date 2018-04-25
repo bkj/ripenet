@@ -8,7 +8,7 @@ from __future__ import print_function, division
 
 import numpy as np
 from dask import get
-from dask.optimize import cull
+from dask.optimization import cull
 from collections import OrderedDict, defaultdict
 from functools import partial
 
@@ -121,7 +121,7 @@ class NoopLayer(PipeModule):
         self.stride       = stride
     
     def forward(self, x):
-        out = Variable(torch.zeros(x.shape[0], self.out_channels, x.shape[2] / self.stride, x.shape[3] / self.stride))
+        out = Variable(torch.zeros(x.shape[0], self.out_channels, int(x.shape[2] / self.stride), int(x.shape[3] / self.stride)))
         if x.is_cuda:
             out = out.cuda()
         

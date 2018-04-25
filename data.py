@@ -15,42 +15,42 @@ import torchvision
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-def make_mnist_dataloaders(root='data', mode='mnist', train_size=1.0, train_batch_size=128, 
-    eval_batch_size=256, num_workers=8, seed=1111, download=False, pretensor=False, pin_memory=False):
+# def make_mnist_dataloaders(root='data', mode='mnist', train_size=1.0, train_batch_size=128, 
+#     eval_batch_size=256, num_workers=8, seed=1111, download=False, pretensor=False, pin_memory=False):
     
-    if mode == 'mnist':
-        if pretensor:
-            transform = torchvision.transforms.Compose([
-               torchvision.transforms.Normalize((0.1307,), (0.3081,))
-            ])        
-        else:
-            transform = torchvision.transforms.Compose([
-               torchvision.transforms.ToTensor(),
-               torchvision.transforms.Normalize((0.1307,), (0.3081,))
-            ])
+#     if mode == 'mnist':
+#         if pretensor:
+#             transform = torchvision.transforms.Compose([
+#                torchvision.transforms.Normalize((0.1307,), (0.3081,))
+#             ])        
+#         else:
+#             transform = torchvision.transforms.Compose([
+#                torchvision.transforms.ToTensor(),
+#                torchvision.transforms.Normalize((0.1307,), (0.3081,))
+#             ])
         
-        trainset = torchvision.datasets.MNIST(root='%s/mnist' % root, train=True, 
-            download=download, transform=transform, pretensor=pretensor)
-        testset = torchvision.datasets.MNIST(root='%s/mnist' % root, train=False, 
-            download=download, transform=transform, pretensor=pretensor)
+#         trainset = torchvision.datasets.MNIST(root='%s/mnist' % root, train=True, 
+#             download=download, transform=transform, pretensor=pretensor)
+#         testset = torchvision.datasets.MNIST(root='%s/mnist' % root, train=False, 
+#             download=download, transform=transform, pretensor=pretensor)
     
-    elif mode == 'fashion_mnist':
-        if pretensor:
-            transform = None
-        else:
-            transform = torchvision.transforms.Compose([
-               torchvision.transforms.ToTensor(),
-            ])
+#     elif mode == 'fashion_mnist':
+#         if pretensor:
+#             transform = None
+#         else:
+#             transform = torchvision.transforms.Compose([
+#                torchvision.transforms.ToTensor(),
+#             ])
         
-        trainset = torchvision.datasets.FashionMNIST(root='%s/fashion_mnist' % root, train=True, 
-            download=download, transform=transform, pretensor=pretensor)
-        testset = torchvision.datasets.FashionMNIST(root='%s/fashion_mnist' % root, train=False, 
-            download=download, transform=transform, pretensor=pretensor)
+#         trainset = torchvision.datasets.FashionMNIST(root='%s/fashion_mnist' % root, train=True, 
+#             download=download, transform=transform, pretensor=pretensor)
+#         testset = torchvision.datasets.FashionMNIST(root='%s/fashion_mnist' % root, train=False, 
+#             download=download, transform=transform, pretensor=pretensor)
     
-    else:
-        raise Exception
+#     else:
+#         raise Exception
     
-    return _make_loaders(trainset, testset, train_size, train_batch_size, eval_batch_size, num_workers, seed, pin_memory)
+#     return _make_loaders(trainset, testset, train_size, train_batch_size, eval_batch_size, num_workers, seed, pin_memory)
 
 
 def make_cifar_dataloaders(root='data', mode='CIFAR10', train_size=1.0, train_batch_size=128, 
