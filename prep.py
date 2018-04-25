@@ -11,6 +11,17 @@ import sys
 import argparse
 import numpy as np
 
+
+CLEANUP = (
+'cleanup() {'
+'    echo "cleanup";'
+'    local pids=$(jobs -pr);'
+'    [ -n "$pids" ] && kill $pids;'
+'};\n'
+'trap "cleanup" INT QUIT TERM EXIT'
+'\n\n'
+)
+
 def parse_args():
     parser = argparse.ArgumentParser()
     
@@ -45,7 +56,7 @@ if __name__ == "__main__":
     if not os.path.exists(args.run):
         os.makedirs(args.run)
     
-    base_cmd = ['#!/bin/bash\n'] + ['./run-%d.sh &' % gpu_id for gpu_id in range(args.num_gpus)] + ['wait; echo done\n\n']
+    base_cmd = ['#!/bin/bash\n', CLEANUP] + ['./run-%d.sh &' % gpu_id for gpu_id in range(args.num_gpus)] + ['wait; echo done\n\n']
     open(os.path.join(args.run, 'run.sh'), 'w').write('\n'.join(base_cmd))
     
     population = initialize_population(

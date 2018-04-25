@@ -39,8 +39,6 @@ def parse_args():
     parser.add_argument('--lr-schedule', type=str, default='linear_cycle')
     parser.add_argument('--lr-max', type=float, default=0.1)
     
-    parser.add_argument('--output-length', type=int, default=2)   # Number of ops to sample
-    
     parser.add_argument('--train-size', type=float, default=1.0)
     parser.add_argument('--pretrained-path', type=str, default=None)
     
@@ -59,6 +57,12 @@ if __name__ == "__main__":
     
     mid = '%s_%s' % (args.architecture, datetime.now().strftime('%s'))
     
+    print('train.py: architecture=%s' % args.architecture, file=sys.stderr)
+    architecture = list(re.sub('[^0-9]','', args.architecture))
+    architecture = np.array(list(map(int, architecture)))
+    assert len(architecture) % 3 == 0, "len(archictecture) % 3 != 0"
+    num_nodes = len(architecture) // 4
+    
     # --
     # IO
     
@@ -70,15 +74,7 @@ if __name__ == "__main__":
     # --
     # Model
     
-    worker = CellWorker(num_nodes=args.output_length).cuda()
-    # worker.verbose = True
-    
-    # if args.pretrained_path is not None:
-    #     print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
-    #     worker.load_state_dict(torch.load(args.pretrained_path))
-    
-    # --
-    # Training options
+    worker = CellWorker(num_nodes=num_nodes).cuda()
     
     lr_scheduler = getattr(HPSchedule, args.lr_schedule)(hp_max=args.lr_max, epochs=args.epochs)
     worker.init_optimizer(
@@ -89,22 +85,14 @@ if __name__ == "__main__":
         weight_decay=5e-4
     )
     
-    # --
-    # Set architectecture
-    
-    architecture = list(re.sub('[^0-9]','', args.architecture))
-    architecture = np.array(list(map(int, architecture)))
-    assert len(architecture) == (4 * worker.num_nodes), "len(architecture) != 4 * worker.num_nodes"
-    print('train_cell_worker: worker.set_path(%s)' % args.architecture, file=sys.stderr)
     worker.set_path(architecture)
     worker.trim_pipes()
     
-    # print(worker, file=sys.stderr)
+    # --
+    # Log
     
-    cell_pipes = worker.get_pipes()[0]
     config = vars(args)
-    # print('pipes ->', cell_pipes, file=sys.stderr)
-    config['_pipes'] = cell_pipes
+    config['_pipes'] = worker.get_pipes()[0]
     json.dump(config, open(os.path.join(args.outpath, '%s.config' % mid), 'w'))
     
     # --
@@ -113,21 +101,33 @@ if __name__ == "__main__":
     print('train_cell_worker: run', file=sys.stderr)
     
     logfile = open(os.path.join(args.outpath, '%s.log' % mid), 'w')
+    rich_logfile = open(os.path.join(args.outpath, '%s.rich_log' % mid), 'w')
     
     for epoch in range(args.epochs):
         print('epoch=%d' % epoch, file=sys.stderr)
-        train_acc = worker.train_epoch(dataloaders, mode='train')['acc']
-        val_acc   = worker.eval_epoch(dataloaders, mode='val')['acc'] if dataloaders['val'] else -1
-        test_acc  = worker.eval_epoch(dataloaders, mode='test')['acc']
+        train = worker.train_epoch(dataloaders, mode='train')
+        val   = worker.eval_epoch(dataloaders, mode='val') if dataloaders['val'] else None
+        test  = worker.eval_epoch(dataloaders, mode='test')
+        
         print(json.dumps(OrderedDict([
-            ("epoch",     int(epoch)),
-            ("train_acc", float(train_acc)),
-            ("val_acc",   float(val_acc)),
-            ("test_acc",  float(test_acc)),
+            ("epoch",     epoch),
+            ("train_acc", train['acc']),
+            ("val_acc",   val['acc'] if val is not None else None),
+            ("test_acc",  test['acc']),
+            ("lr",        worker.hp['lr'])
         ])), file=logfile)
         logfile.flush()
+        
+        print(json.dumps(OrderedDict([
+            ("epoch",  epoch),
+            ("train",  train),
+            ("val",    val if val is not None else None),
+            ("test",   test),
+        ])), file=rich_logfile)
+        rich_logfile.flush()
     
     logfile.close()
+    rich_logfile.close()
     
     worker.save(os.path.join(args.outpath, "%s.weights" % mid))
 

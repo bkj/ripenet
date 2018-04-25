@@ -34,6 +34,8 @@ chmod +x *sh
 cd ../../
 
 cd ./runs/run_3nodes/
-chmod *sh
+chmod +x *sh
 ./run.sh
 cd ../../
+
+find runs/run_2nodes | fgrep .log | python plot.py
