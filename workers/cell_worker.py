@@ -364,9 +364,10 @@ class _CellWorker(basenet.BaseNet):
     
     def set_path_callback(self, mode, **kwargs):
         if mode == 'bn':
-            self.opt.add_param_group({
-                "params" : kwargs['new_layer'].parameters(),
-            })
+            if self.opt is not None:
+                self.opt.add_param_group({
+                    "params" : kwargs['new_layer'].parameters(),
+                })
         else:
             raise Exception("_CellWorker.set_path_callback: unknown mode %s" % mode, file=sys.stderr)
     

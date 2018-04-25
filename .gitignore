@@ -1,7 +1,8 @@
-runs/*
+*png
+*npy
 *pyc
+runs/*
+
 __pycache__/*
 */__pycache__/*
 data/*
-_results/*
-pretrained_models/*
