@@ -10,13 +10,14 @@ import sys
 import json
 import argparse
 import numpy as np
+from time import time
 from datetime import datetime
 from collections import OrderedDict
 
 import torch
 from torch import nn
 from torch.nn import functional as F
-from torch.autograd import Variable
+torch.backends.cudnn.benchmark = True
 
 from data import make_cifar_dataloaders
 from workers import CellWorker
@@ -103,26 +104,31 @@ if __name__ == "__main__":
     logfile = open(os.path.join(args.outpath, '%s.log' % mid), 'w')
     rich_logfile = open(os.path.join(args.outpath, '%s.rich_log' % mid), 'w')
     
+    t = time()
     for epoch in range(args.epochs):
         print('epoch=%d' % epoch, file=sys.stderr)
         train = worker.train_epoch(dataloaders, mode='train')
         val   = worker.eval_epoch(dataloaders, mode='val') if dataloaders['val'] else None
         test  = worker.eval_epoch(dataloaders, mode='test')
         
+        elapsed_time = time() - t
+        
         print(json.dumps(OrderedDict([
-            ("epoch",     epoch),
-            ("train_acc", train['acc']),
-            ("val_acc",   val['acc'] if val is not None else None),
-            ("test_acc",  test['acc']),
-            ("lr",        worker.hp['lr'])
+            ("epoch",        epoch),
+            ("train_acc",    train['acc']),
+            ("val_acc",      val['acc'] if val is not None else None),
+            ("test_acc",     test['acc']),
+            ("lr",           worker.hp['lr']),
+            ("elapsed_time", elapsed_time),
         ])), file=logfile)
         logfile.flush()
         
         print(json.dumps(OrderedDict([
-            ("epoch",  epoch),
-            ("train",  train),
-            ("val",    val if val is not None else None),
-            ("test",   test),
+            ("epoch",        epoch),
+            ("train",        train),
+            ("val",          val if val is not None else None),
+            ("test",         test),
+            ("elapsed_time", elapsed_time),
         ])), file=rich_logfile)
         rich_logfile.flush()
     

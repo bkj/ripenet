@@ -384,7 +384,6 @@ class _CellWorker(basenet.BaseNet):
         return np.all([cell_block.is_valid for cell_block in self.cell_blocks])
 
 
-AVG_CLASSIFIER = False
 class CellWorker(_CellWorker):
     
     def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[32, 64, 128, 256, 512], num_nodes=2):
@@ -414,26 +413,24 @@ class CellWorker(_CellWorker):
             all_layers.append(nn.Sequential(*layers))
         
         self.layers = nn.Sequential(*all_layers)
-        if AVG_CLASSIFIER:
-            # self.classifier = nn.Sequential(
-            #     BNConv2d(in_channels=num_channels[-1], out_channels=num_classes, kernel_size=1, padding=0, stride=1),
-            #     nn.AdaptiveAvgPool2d((1, 1)),
-            # )
-            raise Exception
-        else:
-            self.linear = nn.Linear(num_channels[-1], num_classes)
+        self.linear = nn.Linear(num_channels[-1], num_classes)
     
     def forward(self, x):
         x = self.prep(x)
         x = self.layers(x)
         
-        if AVG_CLASSIFIER:
-            # x = self.classifier(x)
-            # x = x.view((x.shape[0], x.shape[1]))
-            raise Exception
-        else:
-            x = F.adaptive_avg_pool2d(x, (1, 1))
-            x = x.view(x.size(0), -1)
-            x = self.linear(x)
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        x = x.view(x.size(0), -1)
+        
+        # Replace above w/ this:
+        # x_avg = F.adaptive_avg_pool2d(x, (1, 1))
+        # x_avg = x_avg.view(x_avg.size(0), -1)
+        
+        # x_max = F.adaptive_max_pool2d(x, (1, 1))
+        # x_max = x_max.view(x_max.size(0), -1)
+        
+        # x = torch.cat([x_avg, x_max], dim=-1)
+        
+        x = self.linear(x)
         
         return x

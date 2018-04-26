@@ -62,7 +62,8 @@ if __name__ == "__main__":
     args = parse_args()
     set_seeds(args.seed)
     
-    dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pin_memory=True, shuffle_test=False)
+    dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pin_memory=True, 
+        shuffle_train=False, shuffle_test=False)
     
     # --
     # Load + Predict
@@ -70,7 +71,9 @@ if __name__ == "__main__":
     architectures = set([os.path.basename(f).split('.')[0] for f in glob('./runs/run_2nodes/results/*')])
     
     preds = {
-        "test" : {}
+        "train" : {},
+        "val"   : {},
+        "test"  : {},
     }
     
     for architecture in architectures:
@@ -80,15 +83,19 @@ if __name__ == "__main__":
         if os.path.exists(config_path) and os.path.exists(weight_path):
             worker = load_worker(config_path, weight_path)
             
-            # train_preds, train_targets = worker.predict(dataloaders, mode='train')
-            # val_preds, val_targets     = worker.predict(dataloaders, mode='val') if 'val' in dataloaders else None, None
-            test_preds, test_targets = worker.predict(dataloaders, mode='test')
+            train_preds, train_targets = worker.predict(dataloaders, mode='train')
+            train_acc = (train_preds.max(dim=-1)[1] == train_targets).float().mean()
+            print('%s -> train_acc=%f' % (architecture, train_acc))
+            print(to_numpy(train_targets)[:10])
+            preds['train'][architecture] = {
+                "preds"   : to_numpy(train_preds),
+                "targets" : to_numpy(train_targets),
+            }
             
+            test_preds, test_targets = worker.predict(dataloaders, mode='test')
             test_acc = (test_preds.max(dim=-1)[1] == test_targets).float().mean()
             print('%s -> test_acc=%f' % (architecture, test_acc))
-            
             print(to_numpy(test_targets)[:10])
-            
             preds['test'][architecture] = {
                 "preds"   : to_numpy(test_preds),
                 "targets" : to_numpy(test_targets),
@@ -98,12 +105,30 @@ if __name__ == "__main__":
             print('config or weight does not exist -> %s' % architecture, file=sys.stderr)
 
 
+train_targets = list(preds['train'].values())[0]['targets']
+for v in preds['train'].values():
+    assert (v['targets'] == train_targets).all()
+
+test_targets = list(preds['test'].values())[0]['targets']
+for v in preds['test'].values():
+    assert (v['targets'] == test_targets).all()
+
+
+all_train_preds = np.array([v['preds'] for v in preds['train'].values()])
+np.save('train_preds', all_train_preds)
+np.save('train_targets', train_targets)
+
+all_test_preds = np.array([v['preds'] for v in preds['test'].values()])
+np.save('test_preds', all_test_preds)
+np.save('test_targets', test_targets)
+
 # --
 # Does ensembling these models work?
 
 targets = list(preds['test'].values())[0]['targets']
 for v in preds['test'].values():
     assert (v['targets'] == targets).all()
+
 
 all_preds = np.array([v['preds'] for v in preds['test'].values()])
 all_preds = all_preds[np.isnan(preds).sum(axis=-1).sum(axis=-1) == 0]

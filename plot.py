@@ -15,6 +15,7 @@ for f in sys.stdin:
     _ = plt.plot(epochs, test_acc, alpha=0.25)
 
 _ = plt.grid()
-_ = plt.ylim(0.5, 1)
+_ = plt.ylim(0.8, 1)
 _ = plt.axhline(0.90, lw=1, c='red')
+_ = plt.axhline(0.94, lw=1, c='red')
 show_plot()
