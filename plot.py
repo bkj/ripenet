@@ -1,5 +1,6 @@
 import sys
 import json
+import numpy as np
 from glob import glob
 
 from rsub import *
@@ -14,8 +15,9 @@ for f in sys.stdin:
     
     _ = plt.plot(epochs, test_acc, alpha=0.25)
 
-_ = plt.grid()
+# _ = plt.grid()
 _ = plt.ylim(0.8, 1)
-_ = plt.axhline(0.90, lw=1, c='red')
-_ = plt.axhline(0.94, lw=1, c='red')
+for i in np.arange(0.9, 1.0, 0.01):
+    _ = plt.axhline(i, lw=1, c='red')
+
 show_plot()

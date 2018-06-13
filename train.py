@@ -75,7 +75,7 @@ if __name__ == "__main__":
     # --
     # Model
     
-    worker = CellWorker(num_nodes=num_nodes).cuda()
+    worker = CellWorker(num_nodes=num_nodes).to(torch.device('cuda'))
     
     lr_scheduler = getattr(HPSchedule, args.lr_schedule)(hp_max=args.lr_max, epochs=args.epochs)
     worker.init_optimizer(

@@ -41,9 +41,8 @@ cd ../../
 find runs/run_2nodes | fgrep .log | python plot.py
 find runs/run_3nodes | fgrep .log | python plot.py
 
-# --
-# Iteration 2
 
+# Iteration 2
 find runs/run_3nodes | fgrep .log | python downselect.py --run runs/run_3nodes_it1 --epochs 30 --population-size 30
 cd ./runs/run_3nodes_it1/
 chmod +x *sh
@@ -53,5 +52,11 @@ cd ../../
 # Iteration 3
 find runs/run_3nodes_it1 | fgrep .log | python downselect.py --run runs/run_3nodes_it2 --epochs 70 --population-size 15
 cd ./runs/run_3nodes_it2/
+chmod +x *sh
+./run.sh
+
+# Iteration 4
+find runs/run_3nodes_it2 | fgrep .log | python downselect.py --run runs/run_3nodes_it3 --epochs 150 --population-size 5
+cd ./runs/run_3nodes_it3/
 chmod +x *sh
 ./run.sh
