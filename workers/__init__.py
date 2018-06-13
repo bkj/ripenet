@@ -1,1 +1,1 @@
-from .cell_worker import CellWorker, BoltWorker
+from .cell_worker import SmallCellWorker

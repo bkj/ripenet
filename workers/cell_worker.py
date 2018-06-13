@@ -62,31 +62,33 @@ class Flatten(PipeModule):
     def __repr__(self):
         return "Flatten()"
 
+
 SHARED_BN = True
 print('******** SHARED_BN=%d ********' % SHARED_BN, file=sys.stderr)
 if not SHARED_BN:
-    class PipeBatchNorm2d(PipeModule):
-        def __init__(self, *args, **kwargs):
-            super().__init__(needs_path=True)
+    raise Exception
+    # class PipeBatchNorm2d(PipeModule):
+    #     def __init__(self, *args, **kwargs):
+    #         super().__init__(needs_path=True)
             
-            self.make_new_layer = lambda: nn.BatchNorm2d(*args, **kwargs).cuda()
+    #         self.make_new_layer = lambda: nn.BatchNorm2d(*args, **kwargs).cuda()
             
-            self.layers = {}
-            self.active_path = None
+    #         self.layers = {}
+    #         self.active_path = None
         
-        def set_path(self, path, callback):
-            path_desc = str(tuple(path))
-            if path_desc not in self.layers:
-                new_layer = self.make_new_layer()        # Create new layer
-                self.layers[path_desc] = new_layer       # Add to dict
-                self.add_module(path_desc, new_layer)    # Register
-                callback(mode='bn', new_layer=new_layer)
+    #     def set_path(self, path, callback):
+    #         path_desc = str(tuple(path))
+    #         if path_desc not in self.layers:
+    #             new_layer = self.make_new_layer()        # Create new layer
+    #             self.layers[path_desc] = new_layer       # Add to dict
+    #             self.add_module(path_desc, new_layer)    # Register
+    #             callback(mode='bn', new_layer=new_layer)
             
-            self.active_path = path_desc
+    #         self.active_path = path_desc
         
-        def forward(self, x):
-            assert self.active_path is not None, "!! PipeBatchNorm2d: active_path is None"
-            return self.layers[self.active_path](x)
+    #     def forward(self, x):
+    #         assert self.active_path is not None, "!! PipeBatchNorm2d: active_path is None"
+    #         return self.layers[self.active_path](x)
 else:
     class PipeBatchNorm2d(PipeModule):
         def __init__(self, *args, **kwargs):
@@ -106,64 +108,67 @@ else:
 
 class IdentityLayer(PipeModule):
     def __init__(self, in_channels, out_channels, stride=1):
-        super().__init__(needs_path=(in_channels != out_channels))
+        # super().__init__(needs_path=(in_channels != out_channels))
+        super().__init__()
         
         self.in_channels = in_channels
         self.out_channels = out_channels
         
-        if (in_channels != out_channels) or (stride != 1):
-            self.bn = PipeBatchNorm2d(in_channels)
-            self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, stride=stride, kernel_size=stride)
-        else:
-            self.conv = None
-            self.bn = None
+        # if (in_channels != out_channels) or (stride != 1):
+        #     self.bn = PipeBatchNorm2d(in_channels)
+        #     self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, stride=stride, kernel_size=stride)
+        # else:
+        #     self.conv = None
+        #     self.bn = None
     
     def forward(self, x):
-        if self.conv is not None:
-            return self.conv(self.bn(x))
-        else:
-            return x
+        # if self.conv is not None:
+        #     return self.conv(self.bn(x))
+        # else:
+        #     return x
+        return x
     
-    def set_path(self, path, callback):
-        if self.bn is not None:
-            _ = self.bn.set_path(path, callback)
+    # def set_path(self, path, callback):
+    #     if self.bn is not None:
+    #         _ = self.bn.set_path(path, callback)
     
     def __repr__(self):
         return "IdentityLayer(%d -> %d)" % (self.in_channels, self.out_channels)
 
 
-class NoopLayer(PipeModule):
-    def __init__(self, in_channels, out_channels, stride=1):
-        super().__init__()
+# class NoopLayer(PipeModule):
+#     def __init__(self, in_channels, out_channels, stride=1):
+#         super().__init__()
         
-        self.in_channels  = in_channels
-        self.out_channels = out_channels
-        self.stride       = stride
+#         self.in_channels  = in_channels
+#         self.out_channels = out_channels
+#         self.stride       = stride
     
-    def forward(self, x):
-        out = Variable(torch.zeros(x.shape[0], self.out_channels, x.shape[2] / self.stride, x.shape[3] / self.stride))
-        if x.is_cuda:
-            out = out.cuda()
+#     def forward(self, x):
+#         out = Variable(torch.zeros(x.shape[0], self.out_channels, x.shape[2] / self.stride, x.shape[3] / self.stride))
+#         if x.is_cuda:
+#             out = out.cuda()
         
-        return out
+#         return out
     
-    def __repr__(self):
-        return "NoopLayer(%d -> %d | stride=%d)" % (self.in_channels, self.out_channels, self.stride)
+#     def __repr__(self):
+#         return "NoopLayer(%d -> %d | stride=%d)" % (self.in_channels, self.out_channels, self.stride)
 
 
 class BNConv2d(PipeModule):
     def __init__(self, in_channels, out_channels, **kwargs):
-        super().__init__(needs_path=True)
+        # super().__init__(needs_path=True)
+        super().__init__()
         
-        self.add_module('bn', PipeBatchNorm2d(in_channels))
         self.add_module('relu', nn.ReLU())
         self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
+        self.add_module('bn', PipeBatchNorm2d(out_channels))
     
     def forward(self, x):
-        return self.conv(self.relu(self.bn(x)))
+        return self.bn(self.conv(self.relu(x)))
     
-    def set_path(self, path, callback):
-        _ = self.bn.set_path(path, callback)
+    # def set_path(self, path, callback):
+    #     _ = self.bn.set_path(path, callback)
     
     def __repr__(self):
         return 'BN' + self.conv.__repr__()
@@ -176,10 +181,10 @@ class ReshapePool2d(PipeModule):
         self.in_channels  = in_channels
         self.out_channels = out_channels
         
-        if in_channels != out_channels:
-            self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
-        else:
-            self.conv = None
+        # if in_channels != out_channels:
+        #     self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
+        # else:
+        #     self.conv = None
         
         self.mode = mode
         if mode == 'avg':
@@ -188,8 +193,8 @@ class ReshapePool2d(PipeModule):
             self.pool = nn.MaxPool2d(**kwargs)
     
     def forward(self, x):
-        if self.conv is not None:
-            x = self.conv(x)
+        # if self.conv is not None:
+        #     x = self.conv(x)
         
         return self.pool(x)
     
@@ -217,10 +222,10 @@ class CellBlock(nn.Module):
         self.num_nodes = num_nodes
         
         self.op_fns = OrderedDict([
-            ("noop____", NoopLayer),
+            # ("noop____", NoopLayer),
             ("identity", IdentityLayer),
-            ("conv3___", partial(BNConv2d, kernel_size=3, padding=1)),
-            ("conv5___", partial(BNConv2d, stride=stride, kernel_size=5, padding=2)),
+            # ("conv3___", partial(BNConv2d, kernel_size=3, padding=1)),
+            # ("conv5___", partial(BNConv2d, stride=stride, kernel_size=5, padding=2)),
             ("sepconv3", partial(BNSepConv2d, stride=stride, kernel_size=3, padding=1)),
             ("sepconv5", partial(BNSepConv2d, stride=stride, kernel_size=5, padding=2)),
             ("avgpool_", partial(ReshapePool2d, mode='avg', stride=stride, kernel_size=3, padding=1)),
@@ -263,12 +268,11 @@ class CellBlock(nn.Module):
         # --
         # Set default architecture
         
-        # 0002|0112
         self._default_pipes = [
-            ('data_0', 'node_0', 'noop____', 0),
-            ('data_0', 'node_0', 'conv3___', 1),
-            ('data_0', 'node_1', 'identity', 0),
-            ('node_0', 'node_1', 'conv3___', 1),
+            # ('data_0', 'node_0', 'noop____', 0),
+            # ('data_0', 'node_0', 'conv3___', 1),
+            # ('data_0', 'node_1', 'identity', 0),
+            # ('node_0', 'node_1', 'conv3___', 1),
         ]
         self.reset_pipes()
     
@@ -403,67 +407,128 @@ class _CellWorker(basenet.BaseNet):
         return np.all([cell_block.is_valid for cell_block in self.cell_blocks])
 
 
-class CellWorker(_CellWorker):
-    def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[32, 64, 128, 256, 512], num_nodes=2):
+# class CellWorker(_CellWorker):
+#     def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[32, 64, 128, 256, 512], num_nodes=2):
+#         super().__init__()
+        
+#         self.num_nodes = num_nodes
+        
+#         self.prep = nn.Conv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=3, padding=1)
+        
+#         self.cell_blocks = []
+        
+#         all_layers = []
+#         for i, (block, in_channels, out_channels) in enumerate(zip(num_blocks, num_channels[:-1], num_channels[1:])):
+#             layers = []
+            
+#             # Add cell at beginning that changes num channels
+#             cell_block = CellBlock(in_channels=in_channels, out_channels=out_channels, num_nodes=num_nodes, stride=2 if i > 0 else 1)
+#             layers.append(cell_block)
+#             self.cell_blocks.append(cell_block)
+            
+#             # Add cells that preserve channels
+#             for _ in range(block - 1):
+#                 cell_block = CellBlock(in_channels=out_channels, out_channels=out_channels, num_nodes=num_nodes , stride=1)
+#                 layers.append(cell_block)
+#                 self.cell_blocks.append(cell_block)
+            
+#             all_layers.append(nn.Sequential(*layers))
+        
+#         self.layers = nn.Sequential(*all_layers)
+        
+#         self.classifier = nn.Linear(num_channels[-1], num_classes)
+    
+#     def forward(self, x):
+#         x = self.prep(x)
+#         x = self.layers(x)
+        
+#         x = F.adaptive_avg_pool2d(x, (1, 1))
+#         x = x.view(x.size(0), -1)
+#         x = self.classifier(x)
+        
+#         return x
+
+# >>
+from .layers import AdaptiveMultiPool2d, Flatten
+
+class ReductionBlock(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        
+        self.avg_pool = nn.Conv2d(in_channels=in_channels, out_channels=in_channels * 2, kernel_size=2, stride=2, padding=0)
+        self.bn = nn.BatchNorm2d(num_features=in_channels * 2)
+    
+    def forward(self, x):
+        x = self.avg_pool(x)
+        x = self.bn(x)
+        return x
+
+
+class SmallCellWorker(_CellWorker):
+    def __init__(self, num_classes=10, in_channels=3, num_nodes=2):
         super().__init__()
         
         self.num_nodes = num_nodes
         
-        self.prep = nn.Conv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=3, padding=1)
+        num_channels = 20
         
+        self.prep = nn.Sequential(
+            nn.Conv2d(in_channels=in_channels, out_channels=num_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(num_channels),
+        )
+        
+        self.layers = []
         self.cell_blocks = []
         
-        all_layers = []
-        for i, (block, in_channels, out_channels) in enumerate(zip(num_blocks, num_channels[:-1], num_channels[1:])):
-            layers = []
+        pool_layers = (2, 5)
+        for layer_id in range(8):
+            if layer_id in pool_layers:
+                reduction_block = ReductionBlock(in_channels=num_channels)
+                num_channels *= 2
+                self.layers.append(reduction_block)
             
-            # Add cell at beginning that changes num channels
-            cell_block = CellBlock(in_channels=in_channels, out_channels=out_channels, num_nodes=num_nodes, stride=2 if i > 0 else 1)
-            layers.append(cell_block)
+            cell_block = CellBlock(in_channels=num_channels, out_channels=num_channels, num_nodes=num_nodes)
             self.cell_blocks.append(cell_block)
-            
-            # Add cells that preserve channels
-            for _ in range(block - 1):
-                cell_block = CellBlock(in_channels=out_channels, out_channels=out_channels, num_nodes=num_nodes , stride=1)
-                layers.append(cell_block)
-                self.cell_blocks.append(cell_block)
-            
-            all_layers.append(nn.Sequential(*layers))
+            self.layers.append(cell_block)
         
-        self.layers = nn.Sequential(*all_layers)
+        self.layers += [
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            Flatten(),
+            nn.Dropout(p=0.1)
+        ]
         
-        self.classifier = nn.Linear(num_channels[-1], num_classes)
+        self.layers = nn.Sequential(*self.layers)
+        
+        self.classifier = nn.Linear(num_channels, num_classes)
     
     def forward(self, x):
         x = self.prep(x)
         x = self.layers(x)
-        
-        x = F.adaptive_avg_pool2d(x, (1, 1))
-        x = x.view(x.size(0), -1)
         x = self.classifier(x)
-        
         return x
+# <<
 
-from .layers import AdaptiveMultiPool2d, Flatten
-class BoltWorker(_CellWorker):
-    def __init__(self, num_features=512, num_classes=200, num_nodes=2, num_branches=2):
-        super().__init__(loss_fn=F.nll_loss)
+# from .layers import AdaptiveMultiPool2d, Flatten
+# class BoltWorker(_CellWorker):
+#     def __init__(self, num_features=512, num_classes=200, num_nodes=2, num_branches=2):
+#         super().__init__(loss_fn=F.nll_loss)
         
-        self.cell_blocks = [
-            CellBlock(in_channels=num_features, out_channels=num_features, num_nodes=num_nodes, num_branches=num_branches),
-        ]
+#         self.cell_blocks = [
+#             CellBlock(in_channels=num_features, out_channels=num_features, num_nodes=num_nodes, num_branches=num_branches),
+#         ]
         
-        self.layers = nn.Sequential(*self.cell_blocks)
+#         self.layers = nn.Sequential(*self.cell_blocks)
         
-        self.classifier = nn.Sequential(*[
-            AdaptiveMultiPool2d(output_size=(1, 1)),
-            Flatten(),
-            nn.BatchNorm1d(2 * num_features),
-            nn.Linear(in_features=2 * num_features, out_features=num_classes),
-            nn.LogSoftmax(),
-        ])
+#         self.classifier = nn.Sequential(*[
+#             AdaptiveMultiPool2d(output_size=(1, 1)),
+#             Flatten(),
+#             nn.BatchNorm1d(2 * num_features),
+#             nn.Linear(in_features=2 * num_features, out_features=num_classes),
+#             nn.LogSoftmax(),
+#         ])
     
-    def forward(self, x):
-        x = self.layers(x)
-        x = self.classifier(x)
-        return x
+#     def forward(self, x):
+#         x = self.layers(x)
+#         x = self.classifier(x)
+#         return x

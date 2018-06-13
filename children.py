@@ -11,8 +11,6 @@ import torch
 from tqdm import tqdm
 from collections import Counter
 
-from workers.helpers import InvalidGraphException
-
 from basenet.helpers import to_numpy
 
 class LoopyDataloader(object):
