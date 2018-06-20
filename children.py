@@ -58,7 +58,7 @@ class Child(object):
             gen = tqdm(gen, desc='Child (%s) (dataset=%s) (n=%d)' % ('train' if self.worker.training else 'eval', mode, n))
         
         for path in gen:
-            self.worker.set_path(path)
+            # self.worker.set_path(path)
             assert self.worker.is_valid, 'not self.worker.is_valid'
             correct, total = 0, 0
             for _ in range(n):

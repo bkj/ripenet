@@ -6,22 +6,9 @@ source activate ripenet-torch0.4
 
 export CUDA_VISIBLE_DEVICES=0
 
-iter="cub_001"
+iter="cub_002"
 python cub.py \
-    --outpath _results/cub/$iter \
-    \
-    --child-lr-init 0.1 \
-    --child-lr-schedule sgdr \
-    --child-sgdr-period-length 20 \
-    --child-sgdr-t-mult 1 \
-    \
-    --controller-train-interval 20 \
-    --child-train-paths-per-epoch 47 \
-    \
-    --epochs 310 \
-    --num-ops 8 \
-    --num-nodes 3 \
-    --seed 123
+    --outpath _results/cub/$iter
 
 # --
 # Baselines

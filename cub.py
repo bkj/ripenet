@@ -4,11 +4,12 @@
     main.py
 """
 
+from __future__ import division, print_function
+
 import os
 import sys
 import h5py
 import json
-import atexit
 import argparse
 import numpy as np
 from glob import glob
@@ -19,10 +20,9 @@ from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
-from controllers import MicroLSTMController, HyperbandController
+from controllers import HyperbandController
 from children import Child
 from workers import BoltWorker
-from data import make_cifar_dataloaders, make_mnist_dataloaders
 from logger import Logger
 
 from basenet.helpers import to_numpy, set_seeds
@@ -38,24 +38,24 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--outpath', type=str, required=True)
     
-    parser.add_argument('--epochs', type=int, default=20)  #
-    parser.add_argument('--child-train-paths-per-epoch', type=int, default=200) # Number of paths to use to train child network each epoch
+    parser.add_argument('--epochs', type=int, default=1000)  #
+    parser.add_argument('--child-train-paths-per-epoch', type=int, default=32) # Number of paths to use to train child network each epoch
 
     parser.add_argument('--controller-train-paths-per-step',   type=int, default=50)   # Number of paths to use to train controller per step
     parser.add_argument('--controller-eval-paths-per-epoch',   type=int, default=32)   # Number of paths to sample to quantify performance
     parser.add_argument('--controller-predict-paths-per-step', type=int, default=128)  # Number of paths to sample to quantify performance
-    parser.add_argument('--controller-train-interval',   type=int, default=1)          # Frequency of controller steps (in epochs)
+    parser.add_argument('--controller-train-interval',   type=int, default=5)          # Frequency of controller steps (in epochs)
     parser.add_argument('--controller-predict-interval', type=int, default=20)         # Frequency of running on test set (in epochs)
     
-    parser.add_argument('--num-ops', type=int, default=6)          # Number of ops to sample
+    parser.add_argument('--num-ops', type=int, default=8)          # Number of ops to sample
     parser.add_argument('--num-nodes', type=int, default=2)        # Number of cells to sample
     parser.add_argument('--population-size', type=int, default=32) # Number of architectures to sample
     
     parser.add_argument('--child-lr-init', type=float, default=0.1)
-    parser.add_argument('--child-lr-schedule', type=str, default='constant')
+    parser.add_argument('--child-lr-schedule', type=str, default='sgdr')
     parser.add_argument('--child-lr-epochs', type=int, default=1000) # For LR schedule
-    parser.add_argument('--child-sgdr-period-length', type=float, default=10)
-    parser.add_argument('--child-sgdr-t-mult',  type=float, default=2)
+    parser.add_argument('--child-sgdr-period-length', type=float, default=5)
+    parser.add_argument('--child-sgdr-t-mult',  type=float, default=1)
     
     parser.add_argument('--seed', type=int, default=456)
     return parser.parse_args()
@@ -141,8 +141,11 @@ if __name__ == "__main__":
     
     json.dump(vars(args), open(os.path.join(args.outpath, 'config'), 'w'))
     
+    def save(worker, suffix='final'):
+        worker.save(os.path.join(args.outpath, 'weights.' + suffix))
+    
     # --
-    # IO
+    # Data
     
     print('get_precomputed_loaders', file=sys.stderr)
     dataloaders = get_precomputed_loaders()
@@ -154,61 +157,53 @@ if __name__ == "__main__":
     print('dataloaders.keys() ->', list(dataloaders.keys()), file=sys.stderr)
     
     # --
-    # Controller
+    # Worker
     
+    def make_worker():
+        worker = BoltWorker(num_nodes=args.num_nodes).to(torch.device('cuda'))
+        
+        # Save model on exit
+        
+        lr_scheduler_kwargs = {
+            "hp_init"       : args.child_lr_init,
+            "epochs"        : args.child_lr_epochs,
+            "period_length" : args.child_sgdr_period_length,
+            "t_mult"        : args.child_sgdr_t_mult,
+        }
+        if args.child_lr_schedule == 'sgdr':
+            del lr_scheduler_kwargs['epochs']
+        
+        lr_scheduler = getattr(HPSchedule, args.child_lr_schedule)(**lr_scheduler_kwargs)
+        
+        worker.init_optimizer(
+            opt=torch.optim.SGD,
+            params=[p for p in worker.parameters() if p.requires_grad],
+            hp_scheduler={
+                "lr" : lr_scheduler,
+            },
+            momentum=0.9,
+            weight_decay=5e-4,
+            clip_grad_norm=1e3,
+        )
+        
+        return worker
+    
+    # --
+    # Logger
+    
+    child = Child(worker=make_worker(), dataloaders=dataloaders)
     controller = HyperbandController(
         output_length   = args.num_nodes,
         output_channels = args.num_ops,
         population_size = args.population_size,
     )
-    print("controller.population ->\n", controller.population, file=sys.stderr)
-    
-    # --
-    # Worker
-    
-    worker = BoltWorker(num_nodes=args.num_nodes).to(torch.device('cuda'))
-    
-    # Save model on exit
-    def save(suffix='final'):
-        worker.save(os.path.join(args.outpath, 'weights.' + suffix))
-    
-    atexit.register(save)
-    
-    # --
-    # Child
-    
-    lr_scheduler_kwargs = {
-        "hp_init"       : args.child_lr_init,
-        "epochs"        : args.child_lr_epochs,
-        "period_length" : args.child_sgdr_period_length,
-        "t_mult"        : args.child_sgdr_t_mult,
-    }
-    if args.child_lr_schedule == 'sgdr':
-        del lr_scheduler_kwargs['epochs']
-    
-    lr_scheduler = getattr(HPSchedule, args.child_lr_schedule)(**lr_scheduler_kwargs)
-    
-    worker.init_optimizer(
-        opt=torch.optim.SGD,
-        params=[p for p in worker.parameters() if p.requires_grad],
-        hp_scheduler={
-            "lr" : lr_scheduler,
-        },
-        momentum=0.9,
-        weight_decay=5e-4,
-        clip_grad_norm=1e3,
-    )
-    
-    child = Child(worker=worker, dataloaders=dataloaders)
-    
-    # --
-    # Logger
-    
     logger = Logger(args.outpath)
     
     # --
     # Run
     
+    n_hivar = 1
+    n_lovar = 8
     for epoch in range(args.epochs):
         print(('epoch=%d ' % epoch) + ('-' * 50), file=sys.stderr)
         
@@ -217,45 +212,52 @@ if __name__ == "__main__":
         train_rewards = child.train_paths(train_actions)
         logger.log(epoch=epoch, rewards=train_rewards, actions=train_actions, mode='train')
         
-        # Log test loss w/ high variance
-        rewards = child.eval_paths(controller.population, mode='test', n=1)
-        logger.log(epoch=epoch, rewards=rewards, actions=controller.population, mode='test', extra={"n" : 1})
-        
         # Train controller
         if not (epoch + 1) % args.controller_train_interval:
             # Checkpoint model
-            save(suffix='most_recent')
+            save(child.worker, suffix='most_recent')
             
             # Log test loss w/ lower variance
-            eval_actions = controller.population
-            eval_rewards = child.eval_paths(eval_actions, mode='test', n=10)
-            logger.log(epoch=epoch, rewards=rewards, actions=eval_actions, mode='test', extra={"n" : 10})
+            actions = controller.population
+            rewards = child.eval_paths(actions, mode='test', n=n_lovar)
+            logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='test', extra={"n" : n_lovar})
             
             # Compute eval loss w/ lower variance
-            eval_actions = controller.population
-            eval_rewards = child.eval_paths(eval_actions, mode='val', n=10)
-            logger.log(epoch=epoch, rewards=eval_rewards, actions=eval_actions, mode='val', extra={"n" : 10})
+            actions = controller.population
+            rewards = child.eval_paths(actions, mode='val', n=n_lovar)
+            logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='val', extra={"n" : n_lovar})
             
-            # Take controller step
-            controller_update = controller.hyperband_step(actions=eval_actions, rewards=eval_rewards, resample=True)
+            # Then take controller step
+            controller_update = controller.hyperband_step(actions=actions, rewards=rewards, resample=True)
             logger.controller_log(epoch=epoch, controller_update=controller_update)
-        
-        # Take top-k models on validation set, log performance on test set
-        if (not (epoch + 1) % args.controller_predict_interval):
-            val_n  = 32
-            test_n = 32
-            topk   = 5
             
-            actions  = controller.population
-            topk_idx = child.eval_paths(actions, mode='val', n=val_n).squeeze().topk(topk)[1]
-            rewards  = child.eval_paths(actions[topk_idx], mode='test', n=test_n)
+            # >>
+            # Reset worker each time a step is taken
+            print('cub.py: resetting worker', file=sys.stderr)
+            child.worker = make_worker()
+            # <<
+        else:
+            # Log test loss w/ high variance
+            actions = controller.population
+            rewards = child.eval_paths(actions, mode='test', n=n_hivar)
+            logger.log(epoch=epoch, rewards=rewards, actions=actions, mode='test', extra={"n" : n_hivar})
             
-            logger.log(epoch=epoch, rewards=rewards, actions=actions[topk_idx], mode='test', extra={
-                "predict"      : True,
-                "topk"         : topk,
-                "test_n"       : test_n,
-                "val_n"        : val_n, 
-                "action_order" : [str(action) for action in to_numpy(actions[topk_idx])]
-            })
+        # # Take top-k models on validation set, log performance on test set
+        # if (not (epoch + 1) % args.controller_predict_interval):
+        #     val_n  = 32
+        #     test_n = 32
+        #     topk   = 5
+            
+        #     actions  = controller.population
+        #     topk_idx = child.eval_paths(actions, mode='val', n=val_n).squeeze().topk(topk)[1]
+        #     rewards  = child.eval_paths(actions[topk_idx], mode='test', n=test_n)
+            
+        #     logger.log(epoch=epoch, rewards=rewards, actions=actions[topk_idx], mode='test', extra={
+        #         "predict"      : True,
+        #         "topk"         : topk,
+        #         "test_n"       : test_n,
+        #         "val_n"        : val_n, 
+        #         "action_order" : [str(action) for action in to_numpy(actions[topk_idx])]
+        #     })
     
     logger.close()

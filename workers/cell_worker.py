@@ -110,7 +110,7 @@ class IdentityLayer(PipeModule):
         self.out_channels = out_channels
         
         if (in_channels != out_channels) or (stride != 1):
-            self.bn = PipeBatchNorm2d(in_channels)
+            # self.bn = PipeBatchNorm2d(in_channels)
             self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, stride=stride, kernel_size=stride)
         else:
             self.conv = None
@@ -402,53 +402,59 @@ class _CellWorker(BaseNet):
 
 
 class CellWorker(_CellWorker):
-    def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[32, 64, 128, 256, 512], num_nodes=2):
-        super().__init__()
+    pass
+#     def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[32, 64, 128, 256, 512], num_nodes=2):
+#         super().__init__()
         
-        self.num_nodes = num_nodes
+#         self.num_nodes = num_nodes
         
-        self.prep = nn.Conv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=3, padding=1)
+#         self.prep = nn.Conv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=3, padding=1)
         
-        self.cell_blocks = []
+#         self.cell_blocks = []
         
-        all_layers = []
-        for i, (block, in_channels, out_channels) in enumerate(zip(num_blocks, num_channels[:-1], num_channels[1:])):
-            layers = []
+#         all_layers = []
+#         for i, (block, in_channels, out_channels) in enumerate(zip(num_blocks, num_channels[:-1], num_channels[1:])):
+#             layers = []
             
-            # Add cell at beginning that changes num channels
-            cell_block = CellBlock(in_channels=in_channels, out_channels=out_channels, num_nodes=num_nodes, stride=2 if i > 0 else 1)
-            layers.append(cell_block)
-            self.cell_blocks.append(cell_block)
+#             # Add cell at beginning that changes num channels
+#             cell_block = CellBlock(in_channels=in_channels, out_channels=out_channels, num_nodes=num_nodes, stride=2 if i > 0 else 1)
+#             layers.append(cell_block)
+#             self.cell_blocks.append(cell_block)
             
-            # Add cells that preserve channels
-            for _ in range(block - 1):
-                cell_block = CellBlock(in_channels=out_channels, out_channels=out_channels, num_nodes=num_nodes , stride=1)
-                layers.append(cell_block)
-                self.cell_blocks.append(cell_block)
+#             # Add cells that preserve channels
+#             for _ in range(block - 1):
+#                 cell_block = CellBlock(in_channels=out_channels, out_channels=out_channels, num_nodes=num_nodes , stride=1)
+#                 layers.append(cell_block)
+#                 self.cell_blocks.append(cell_block)
             
-            all_layers.append(nn.Sequential(*layers))
+#             all_layers.append(nn.Sequential(*layers))
         
-        self.layers = nn.Sequential(*all_layers)
+#         self.layers = nn.Sequential(*all_layers)
         
-        self.classifier = nn.Linear(num_channels[-1], num_classes)
+#         self.classifier = nn.Linear(num_channels[-1], num_classes)
     
-    def forward(self, x):
-        x = self.prep(x)
-        x = self.layers(x)
+#     def forward(self, x):
+#         x = self.prep(x)
+#         x = self.layers(x)
         
-        x = F.adaptive_avg_pool2d(x, (1, 1))
-        x = x.view(x.size(0), -1)
-        x = self.classifier(x)
+#         x = F.adaptive_avg_pool2d(x, (1, 1))
+#         x = x.view(x.size(0), -1)
+#         x = self.classifier(x)
         
-        return x
+#         return x
 
 from .layers import AdaptiveMultiPool2d, Flatten
 class BoltWorker(_CellWorker):
-    def __init__(self, num_features=512, num_classes=200, num_nodes=2, num_branches=2):
+    def __init__(self, num_features=256, num_classes=200, num_nodes=2, num_branches=2):
         super().__init__()
         
         self.cell_blocks = [
-            CellBlock(in_channels=num_features, out_channels=num_features, num_nodes=num_nodes, num_branches=num_branches),
+            CellBlock(
+                in_channels=num_features, 
+                out_channels=num_features,
+                num_nodes=num_nodes,
+                num_branches=num_branches
+            ),
         ]
         
         self.layers = nn.Sequential(*self.cell_blocks)
@@ -456,7 +462,7 @@ class BoltWorker(_CellWorker):
         self.classifier = nn.Sequential(*[
             AdaptiveMultiPool2d(output_size=(1, 1)),
             Flatten(),
-            nn.BatchNorm1d(2 * num_features),
+            # nn.BatchNorm1d(2 * num_features),
             nn.Linear(in_features=2 * num_features, out_features=num_classes),
         ])
     
