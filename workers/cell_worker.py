@@ -9,16 +9,16 @@ from __future__ import print_function, division
 import sys
 import numpy as np
 from dask import get
+from functools import partial
 from dask.optimize import cull
 from collections import OrderedDict, defaultdict
-from functools import partial
 
 import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
-import basenet
+from basenet import BaseNet
 from basenet.helpers import to_numpy
 
 from .helpers import InvalidGraphException
@@ -357,7 +357,7 @@ class CellBlock(nn.Module):
 # --
 # Models
 
-class _CellWorker(basenet.BaseNet):
+class _CellWorker(BaseNet):
     def reset_pipes(self):
         for cell_block in self.cell_blocks:
             _ = cell_block.reset_pipes()
@@ -445,7 +445,7 @@ class CellWorker(_CellWorker):
 from .layers import AdaptiveMultiPool2d, Flatten
 class BoltWorker(_CellWorker):
     def __init__(self, num_features=512, num_classes=200, num_nodes=2, num_branches=2):
-        super().__init__(loss_fn=F.nll_loss)
+        super().__init__()
         
         self.cell_blocks = [
             CellBlock(in_channels=num_features, out_channels=num_features, num_nodes=num_nodes, num_branches=num_branches),
@@ -458,7 +458,6 @@ class BoltWorker(_CellWorker):
             Flatten(),
             nn.BatchNorm1d(2 * num_features),
             nn.Linear(in_features=2 * num_features, out_features=num_classes),
-            nn.LogSoftmax(),
         ])
     
     def forward(self, x):

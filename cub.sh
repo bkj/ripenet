@@ -1,6 +1,12 @@
+#!/bin/bash
+
+# cub.sh
+
+source activate ripenet-torch0.4
+
 export CUDA_VISIBLE_DEVICES=1
 
-iter="cub_8"
+iter="cub_000"
 python cub.py \
     --outpath _results/cub/$iter \
     \

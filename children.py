@@ -4,15 +4,15 @@
     children.py
 """
 
-from __future__ import division
+from __future__ import print_function, division
 
 import sys
 import torch
+import numpy as np
 from tqdm import tqdm
 from collections import Counter
 
-from workers.helpers import InvalidGraphException
-
+from basenet import Metrics
 from basenet.helpers import to_numpy
 
 class LoopyDataloader(object):
@@ -47,81 +47,60 @@ class Child(object):
         self.dataloaders  = dict([(k, LoopyDataloader(v)) for k,v in dataloaders.items()])
         self.records_seen = Counter()
         self.verbose      = verbose
-        
-    def train_paths(self, paths, n=1, mode='train'):
+    
+    def _run_paths(self, paths, n, mode, batch_fn):
         self.worker.reset_pipes()
         
         rewards = []
-        
         loader = self.dataloaders[mode]
         gen = paths
         if self.verbose:
-            gen = tqdm(gen, desc='Child.train_paths (%s)' % mode)
+            gen = tqdm(gen, desc='Child (%s) (%s)' % ('train' if self.worker.training else 'eval', mode))
         
-        correct, total = 0, 0
         for path in gen:
             self.worker.set_path(path)
-            if self.worker.is_valid:
-                acc = 0
-                for _ in range(n):
-                    data, target = next(loader)
-                    self.worker.set_progress(loader.progress)
-                    output, loss = self.worker.train_batch(data, target)
-                    
-                    if self.verbose:
-                        correct += (to_numpy(output).argmax(axis=1) == to_numpy(target)).sum()
-                        total += data.shape[0]
-                        gen.set_postfix({'acc' : correct / total, "loss" : loss})
-                    
-                    acc += (to_numpy(output).argmax(axis=1) == to_numpy(target)).mean()
-                    
-                    self.records_seen[mode] += data.shape[0]
-            else:
-                acc = -0.1
-                raise Exception('not self.worker.is_valid')
+            assert self.worker.is_valid, 'not self.worker.is_valid'
+            correct, total = 0, 0
+            for _ in range(n):
+                data, target = next(loader)
+                self.worker.set_progress(loader.progress)
+                
+                loss, metrics = batch_fn(data, target, metric_fns=[Metrics.n_correct])
+                
+                correct += metrics[0]
+                total   += target.shape[0]
+                
+                self.records_seen[mode] += data.shape[0]
+                
+                if self.verbose and rewards:
+                    gen.set_postfix(**{
+                        "mean_acc"  : float(np.mean(rewards)),
+                        "max_acc"   : float(np.max(rewards)),
+                    })
             
-            rewards.append(acc / n)
+            rewards.append(correct / total)
         
-        return torch.FloatTensor(rewards).view(-1, 1)
+        return torch.Tensor(rewards).view(-1, 1)
+    
+    def train_paths(self, paths, n=1, mode='train'):
+        _ = self.worker.train()
+        return self._run_paths(
+            paths=paths,
+            n=n,
+            mode=mode,
+            batch_fn=self.worker.train_batch,
+        )
     
     def eval_paths(self, paths, n=1, mode='val'):
-        self.worker.reset_pipes()
-        
-        rewards = []
-        
-        loader = self.dataloaders[mode]
-        gen = paths
-        if self.verbose:
-            gen = tqdm(gen, desc='Child.eval_paths (%s)' % mode)
-        
-        correct, total = 0, 0
-        for path in gen:
-            self.worker.set_path(path)
-            if self.worker.is_valid:
-                acc = 0
-                for _ in range(n):
-                    data, target = next(loader)
-                    output, loss = self.worker.eval_batch(data, target)
-                    
-                    if self.verbose:
-                        correct += (to_numpy(output).argmax(axis=1) == to_numpy(target)).sum()
-                        total += data.shape[0]
-                        gen.set_postfix({'acc' : correct / total, "loss" : loss})
-                    
-                    acc += (to_numpy(output).argmax(axis=1) == to_numpy(target)).mean()
-                    
-                    self.records_seen[mode] += data.shape[0]
-                    
-            else:
-                acc = -0.1
-                raise Exception('not self.worker.is_valid')
-            
-            rewards.append(acc / n)
-        
-        return torch.FloatTensor(rewards).view(-1, 1)
+        _ = self.worker.eval()
+        return self._run_paths(
+            paths=paths,
+            n=n,
+            mode=mode,
+            batch_fn=self.worker.eval_batch,
+        )
+
 
 class LazyChild(Child):
     def train_paths(self, paths):
         pass
-
-

@@ -6,10 +6,12 @@
 
 import os
 import sys
+import h5py
 import json
 import atexit
 import argparse
 import numpy as np
+from glob import glob
 from collections import OrderedDict
 
 import torch
@@ -24,7 +26,7 @@ from data import make_cifar_dataloaders, make_mnist_dataloaders
 from logger import Logger
 
 from basenet.helpers import to_numpy, set_seeds
-from basenet.lr import LRSchedule
+from basenet.hp_schedule import HPSchedule
 
 np.set_printoptions(linewidth=120)
 
@@ -84,8 +86,6 @@ def parse_args():
 # >>
 # Worker
 
-import h5py
-
 class H5Dataset(torch.utils.data.Dataset):
     def __init__(self, h5_path):
         self.h5_path = h5_path
@@ -106,11 +106,7 @@ class H5Dataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.length
 
-sys.path.append('/home/bjohnson/projects/ripenet/workers/')
-from glob import glob
-
-def get_precomputed_loaders(cache='/home/bjohnson/projects/ftune/_results/precomputed/conv', 
-        batch_size=128, shuffle=True, num_workers=8, **kwargs):
+def get_precomputed_loaders(cache='data/cub_precomputed', batch_size=128, shuffle=True, num_workers=8, **kwargs):
     
     kwargs.update({
         "batch_size"  : batch_size,
@@ -127,21 +123,24 @@ def get_precomputed_loaders(cache='/home/bjohnson/projects/ftune/_results/precom
     return loaders
 
 # # >>
+# # Test/val split
+
 # import h5py
 # from sklearn.model_selection import train_test_split
-# f = h5py.File('/home/bjohnson/projects/ftune/_results/precomputed/conv/val.h5')
+
+# f = h5py.File('data/cub_precomputed/val.h5')
 
 # lookup = [(k, v['target'].value) for k,v in f.items()]
 # idx, lab = list(zip(*lookup))
 
 # train_idx, test_idx = train_test_split(idx, train_size=0.5, stratify=lab, random_state=123)
 
-# val_test = h5py.File('/home/bjohnson/projects/ftune/_results/precomputed/conv/val_test.h5')
+# val_test = h5py.File('data/cub_precomputed/val_test.h5')
 # for i, idx in enumerate(train_idx):
 #     val_test['%s/data' % i] = f[idx]['data'].value
 #     val_test['%s/target' % i] = f[idx]['target'].value
 
-# test_test = h5py.File('/home/bjohnson/projects/ftune/_results/precomputed/conv/test_test.h5')
+# test_test = h5py.File('data/cub_precomputed/test_test.h5')
 # for i, idx in enumerate(test_idx):
 #     test_test['%s/data' % i] = f[idx]['data'].value
 #     test_test['%s/target' % i] = f[idx]['target'].value
@@ -151,11 +150,7 @@ def get_precomputed_loaders(cache='/home/bjohnson/projects/ftune/_results/precom
 # test_test.flush()
 # test_test.close()
 
-# test_test = h5py.File('/home/bjohnson/projects/ftune/_results/precomputed/conv/test_test.h5')
-# [val_test[i]['data'].value.shape for i in train_idx]
 # # <<
-
-# <<
 
 state_dim = 32
 
@@ -208,7 +203,7 @@ if __name__ == "__main__":
     # Worker
     
     set_seeds(args.seed)
-    worker = BoltWorker(num_nodes=args.num_nodes).cuda()
+    worker = BoltWorker(num_nodes=args.num_nodes).to(torch.device('cuda'))
     
     if args.pretrained_path is not None:
         print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
@@ -223,16 +218,22 @@ if __name__ == "__main__":
     # --
     # Child
     
-    lr_scheduler = getattr(LRSchedule, args.child_lr_schedule)(
-        lr_init=args.child_lr_init,
-        epochs=args.child_lr_epochs,
-        period_length=args.child_sgdr_period_length,
-        t_mult=args.child_sgdr_t_mult,
-    )
+    lr_scheduler_kwargs = {
+        "hp_init" : args.child_lr_init,
+        "epochs" : args.child_lr_epochs,
+        "period_length" : args.child_sgdr_period_length,
+        "t_mult" : args.child_sgdr_t_mult,
+    }
+    if args.child_lr_schedule == 'sgdr':
+        del lr_scheduler_kwargs['epochs']
+    
+    lr_scheduler = getattr(HPSchedule, args.child_lr_schedule)(**lr_scheduler_kwargs)
     worker.init_optimizer(
         opt=torch.optim.SGD,
         params=filter(lambda x: x.requires_grad, worker.parameters()),
-        lr_scheduler=lr_scheduler,
+        hp_scheduler={
+            "lr" : lr_scheduler
+        },
         momentum=0.9,
         weight_decay=5e-4,
         clip_grad_norm=1e3,
@@ -250,7 +251,6 @@ if __name__ == "__main__":
     
     for epoch in range(args.epochs):
         print(('epoch=%d ' % epoch) + ('-' * 50), file=sys.stderr)
-        
         
         # Train child
         states = Variable(torch.randn(args.child_train_paths_per_epoch, state_dim))
@@ -274,7 +274,6 @@ if __name__ == "__main__":
         
         if (not (epoch + 1) % args.controller_eval_interval) and ((epoch + 1) % controller_train_interval):
             do_eval(n=1)
-        
         
         # Train controller
         if not (epoch + 1) % controller_train_interval:
@@ -328,29 +327,5 @@ if __name__ == "__main__":
                 "val_n"        : val_n, 
                 "action_order" : [str(action) for action in to_numpy(actions[topk_idx])]
             })
-        
-        # >>
-        # Reset model
-        if args.reset_model_interval > 0:
-            if not (epoch + 1) % args.reset_model_interval:
-                print('------ new model ------', file=sys.stderr)
-                set_seeds(args.seed)
-                worker = BoltWorker(num_nodes=args.num_nodes).cuda()
-                lr_scheduler = getattr(LRSchedule, args.child_lr_schedule)(
-                    lr_init=args.child_lr_init,
-                    epochs=args.child_lr_epochs,
-                    period_length=args.child_sgdr_period_length,
-                    t_mult=args.child_sgdr_t_mult,
-                )
-                worker.init_optimizer(
-                    opt=torch.optim.SGD,
-                    params=filter(lambda x: x.requires_grad, worker.parameters()),
-                    lr_scheduler=lr_scheduler,
-                    momentum=0.9,
-                    weight_decay=5e-4,
-                    clip_grad_norm=1e3,
-                )
-                child.worker = worker
-        # <<
     
     logger.close()
