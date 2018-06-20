@@ -13,8 +13,8 @@ from matplotlib import pyplot as plt
 # --
 # IO
 
-run = 'cub_6'
-path = '_results/cub/%s/train.log' % run
+run = 'cub_001'
+path = '_results/cub/%s/test.log' % run
 data = list(map(json.loads, open(path).readlines()[:-1]))
 
 rewards, steps = [], []
@@ -63,15 +63,15 @@ show_plot()
 # --
 # Controller convergence
 
-action_path = '_results/cub/%s/train.actions' % run
-actions = pd.read_csv(action_path, header=None, sep='\t')
-actions.columns = ['mode', 'epoch', 'score'] + list(range(actions.shape[1] - 4)) + ['aid']
+# action_path = '_results/cub/%s/train.actions' % run
+# actions = pd.read_csv(action_path, header=None, sep='\t')
+# actions.columns = ['mode', 'epoch', 'score'] + list(range(actions.shape[1] - 4)) + ['aid']
 
-ucount = actions.groupby('epoch').aid.apply(lambda x: len(set(x)) / len(x))
-ucount += np.random.normal(0, 0.01, ucount.shape[0])
-_ = plt.plot(ucount, c='red')
-_ = plt.ylim(-0.1, 1.1)
-_ = plt.axhline(0, c='grey')
-_ = plt.axhline(1, c='grey')
-_ = plt.title('num_unique_arch / num_arch')
-show_plot()
+# ucount = actions.groupby('epoch').aid.apply(lambda x: len(set(x)) / len(x))
+# ucount += np.random.normal(0, 0.01, ucount.shape[0])
+# _ = plt.plot(ucount, c='red')
+# _ = plt.ylim(-0.1, 1.1)
+# _ = plt.axhline(0, c='grey')
+# _ = plt.axhline(1, c='grey')
+# _ = plt.title('num_unique_arch / num_arch')
+# show_plot()

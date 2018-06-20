@@ -49,7 +49,9 @@ class HyperbandController(object):
         
         return np.hstack(blocks)
     
-    def hyperband_step(self, rewards, resample=False):
+    def hyperband_step(self, actions, rewards, resample=False):
+        assert (actions == self.population).all()
+        
         reward_ranking = np.argsort(to_numpy(-rewards).squeeze())
         
         update = []
@@ -89,10 +91,9 @@ class HyperbandController(object):
         
         return update
     
-    def __call__(self, states):
-        action_idx = np.random.choice(self.population_size, states.shape[0])
-        all_actions = torch.LongTensor(self.population[action_idx])
-        return all_actions, None, None
+    def __call__(self, n_paths):
+        action_idx = np.random.choice(self.population_size, n_paths)
+        return torch.LongTensor(self.population[action_idx])
 
 
 if __name__ == '__main__':

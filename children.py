@@ -49,13 +49,13 @@ class Child(object):
         self.verbose      = verbose
     
     def _run_paths(self, paths, n, mode, batch_fn):
-        self.worker.reset_pipes()
+        _ = self.worker.reset_pipes()
         
         rewards = []
         loader = self.dataloaders[mode]
         gen = paths
         if self.verbose:
-            gen = tqdm(gen, desc='Child (%s) (%s)' % ('train' if self.worker.training else 'eval', mode))
+            gen = tqdm(gen, desc='Child (%s) (dataset=%s) (n=%d)' % ('train' if self.worker.training else 'eval', mode, n))
         
         for path in gen:
             self.worker.set_path(path)
@@ -71,14 +71,14 @@ class Child(object):
                 total   += target.shape[0]
                 
                 self.records_seen[mode] += data.shape[0]
-                
-                if self.verbose and rewards:
-                    gen.set_postfix(**{
-                        "mean_acc"  : float(np.mean(rewards)),
-                        "max_acc"   : float(np.max(rewards)),
-                    })
             
             rewards.append(correct / total)
+            
+            if self.verbose:
+                gen.set_postfix(**{
+                    "mean_acc"  : float(np.mean(rewards)),
+                    "max_acc"   : float(np.max(rewards)),
+                })
         
         return torch.Tensor(rewards).view(-1, 1)
     
@@ -99,8 +99,3 @@ class Child(object):
             mode=mode,
             batch_fn=self.worker.eval_batch,
         )
-
-
-class LazyChild(Child):
-    def train_paths(self, paths):
-        pass

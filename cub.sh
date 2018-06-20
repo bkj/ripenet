@@ -4,23 +4,17 @@
 
 source activate ripenet-torch0.4
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
-iter="cub_000"
+iter="cub_001"
 python cub.py \
     --outpath _results/cub/$iter \
-    \
-    --algorithm hyperband \
-    --hyperband-halving \
-    --hyperband-resample \
-    --population-size 32 \
     \
     --child-lr-init 0.1 \
     --child-lr-schedule sgdr \
     --child-sgdr-period-length 20 \
     --child-sgdr-t-mult 1 \
     \
-    --controller-eval-interval 1 \
     --controller-train-interval 20 \
     --child-train-paths-per-epoch 47 \
     \
@@ -28,33 +22,6 @@ python cub.py \
     --num-ops 8 \
     --num-nodes 3 \
     --seed 123
-
-
-iter="reinforce_7"
-CUDA_VISIBLE_DEVICES=1 python cub.py \
-    --outpath _results/cub/$iter \
-    \
-    --algorithm reinforce \
-    --entropy-penalty 0.05 \
-    --temperature 2 \
-    \
-    --child-lr-init 0.01 \
-    --child-lr-schedule sgdr \
-    --child-sgdr-period-length 20 \
-    --child-sgdr-t-mult 1 \
-    \
-    --controller-eval-interval 1 \
-    --controller-train-interval 1 \
-    --child-train-paths-per-epoch 100 \
-    --controller-eval-paths-per-epoch 128 \
-    \
-    --epochs 1000 \
-    --num-ops 8 \
-    --num-nodes 3 \
-    --seed 123 \
-    \
-    --reset-model-interval 20
-
 
 # --
 # Baselines
