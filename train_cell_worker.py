@@ -37,7 +37,7 @@ np.set_printoptions(linewidth=120)
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--outpath', type=str, default='delete-me')
-    parser.add_argument('--architecture', type=str, required="0000_0000")
+    parser.add_argument('--architecture', type=str, default="0000_0000")
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--lr-schedule', type=str, default='linear')
     parser.add_argument('--num-nodes', type=int, default=2) # Number of cells to sample
@@ -102,16 +102,16 @@ if __name__ == "__main__":
     worker.verbose = True
     for epoch in range(args.epochs):
         print('epoch=%d' % epoch, file=sys.stderr)
-        print(worker.train_epoch(dataloaders, mode='train', num_batches=10), file=sys.stderr)
-        train_acc = worker.train_epoch(dataloaders, mode='train', num_batches=10)['acc']
-        history.append(OrderedDict([
-            ("epoch",     int(epoch)),
-            ("train_acc", float(train_acc)),
-            ("val_acc",   float(worker.eval_epoch(dataloaders, mode='val')['acc']) if dataloaders['val'] else None),
-            ("test_acc",  float(worker.eval_epoch(dataloaders, mode='test')['acc'])),
-        ]))
+        
+        train_acc = worker.train_epoch(dataloaders, mode='train')['acc']
+        history.append({
+            "epoch"     : int(epoch),
+            "train_acc" : float(train_acc),
+            "val_acc"   : float(worker.eval_epoch(dataloaders, mode='val')['acc']) if 'val' in dataloaders else None,
+            "test_acc"  : float(worker.eval_epoch(dataloaders, mode='test')['acc']),
+        })
         print(json.dumps(history[-1]), file=logfile)
         logfile.flush()
-
+        
     worker.save(args.outpath + '.weights')
     logfile.close()
