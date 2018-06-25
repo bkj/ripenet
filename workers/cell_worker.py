@@ -60,46 +60,48 @@ class Flatten(PipeModule):
     def __repr__(self):
         return "Flatten()"
 
-SHARED_BN = True
-print('******** SHARED_BN=%d ********' % SHARED_BN, file=sys.stderr)
-if not SHARED_BN:
-    class PipeBatchNorm2d(PipeModule):
-        def __init__(self, *args, **kwargs):
-            super().__init__(needs_path=True)
+# SHARED_BN = True
+# print('******** SHARED_BN=%d ********' % SHARED_BN, file=sys.stderr)
+# if not SHARED_BN:
+#     class PipeBatchNorm2d(PipeModule):
+#         def __init__(self, *args, **kwargs):
+#             super().__init__(needs_path=True)
             
-            self.make_new_layer = lambda: nn.BatchNorm2d(*args, **kwargs).cuda()
+#             self.make_new_layer = lambda: nn.BatchNorm2d(*args, **kwargs).cuda()
             
-            self.layers = {}
-            self.active_path = None
+#             self.layers = {}
+#             self.active_path = None
         
-        def set_path(self, path, callback):
-            path_desc = str(tuple(path))
-            if path_desc not in self.layers:
-                new_layer = self.make_new_layer()        # Create new layer
-                self.layers[path_desc] = new_layer       # Add to dict
-                self.add_module(path_desc, new_layer)    # Register
-                callback(mode='bn', new_layer=new_layer)
+#         def set_path(self, path, callback):
+#             path_desc = str(tuple(path))
+#             if path_desc not in self.layers:
+#                 new_layer = self.make_new_layer()        # Create new layer
+#                 self.layers[path_desc] = new_layer       # Add to dict
+#                 self.add_module(path_desc, new_layer)    # Register
+#                 callback(mode='bn', new_layer=new_layer)
             
-            self.active_path = path_desc
+#             self.active_path = path_desc
         
-        def forward(self, x):
-            assert self.active_path is not None, "!! PipeBatchNorm2d: active_path is None"
-            return self.layers[self.active_path](x)
-else:
-    class PipeBatchNorm2d(PipeModule):
-        def __init__(self, *args, **kwargs):
-            super().__init__(needs_path=True)
+#         def forward(self, x):
+#             raise Exception
+#             # assert self.active_path is not None, "!! PipeBatchNorm2d: active_path is None"
+#             # return self.layers[self.active_path](x)
+# else:
+#     class PipeBatchNorm2d(PipeModule):
+#         def __init__(self, *args, **kwargs):
+#             super().__init__(needs_path=True)
             
-            kwargs.update({
-                "track_running_stats" : False,
-            })
-            self.layer = nn.BatchNorm2d(*args, **kwargs).cuda()
+#             kwargs.update({
+#                 "track_running_stats" : False,
+#             })
+#             self.layer = nn.BatchNorm2d(*args, **kwargs).cuda()
             
-        def set_path(self, path, callback):
-            pass
+#         def set_path(self, path, callback):
+#             pass
         
-        def forward(self, x):
-            return self.layer(x)
+#         def forward(self, x):
+#             raise Exception
+#             # return self.layer(x)
 
 
 class IdentityLayer(PipeModule):
@@ -118,13 +120,14 @@ class IdentityLayer(PipeModule):
     
     def forward(self, x):
         if self.conv is not None:
-            return self.conv(self.bn(x))
+            # return self.conv(self.bn(x))
+            return self.conv(x)
         else:
             return x
     
-    def set_path(self, path, callback):
-        if self.bn is not None:
-            _ = self.bn.set_path(path, callback)
+    # def set_path(self, path, callback):
+    #     if self.bn is not None:
+    #         _ = self.bn.set_path(path, callback)
     
     def __repr__(self):
         return "IdentityLayer(%d -> %d)" % (self.in_channels, self.out_channels)
@@ -153,15 +156,16 @@ class BNConv2d(PipeModule):
     def __init__(self, in_channels, out_channels, **kwargs):
         super().__init__(needs_path=True)
         
-        self.add_module('bn', PipeBatchNorm2d(in_channels))
+        # self.add_module('bn', PipeBatchNorm2d(in_channels))
         self.add_module('relu', nn.ReLU())
         self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
     
     def forward(self, x):
-        return self.conv(self.relu(self.bn(x)))
+        # return self.conv(self.relu(self.bn(x)))
+        return self.conv(self.relu(x))
     
-    def set_path(self, path, callback):
-        _ = self.bn.set_path(path, callback)
+    # def set_path(self, path, callback):
+    #     _ = self.bn.set_path(path, callback)
     
     def __repr__(self):
         return 'BN' + self.conv.__repr__()
@@ -445,12 +449,12 @@ class CellWorker(_CellWorker):
 
 from .layers import AdaptiveMultiPool2d, Flatten
 class BoltWorker(_CellWorker):
-    def __init__(self, num_features=256, num_classes=200, num_nodes=2, num_branches=2):
+    def __init__(self, num_features=512, num_classes=200, num_nodes=2, num_branches=2):
         super().__init__()
         
         self.cell_blocks = [
             CellBlock(
-                in_channels=num_features, 
+                in_channels=num_features,
                 out_channels=num_features,
                 num_nodes=num_nodes,
                 num_branches=num_branches
@@ -462,7 +466,7 @@ class BoltWorker(_CellWorker):
         self.classifier = nn.Sequential(*[
             AdaptiveMultiPool2d(output_size=(1, 1)),
             Flatten(),
-            # nn.BatchNorm1d(2 * num_features),
+            nn.BatchNorm1d(2 * num_features),
             nn.Linear(in_features=2 * num_features, out_features=num_classes),
         ])
     

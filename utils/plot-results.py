@@ -19,7 +19,7 @@ data = list(map(json.loads, open(path).readlines()[:-1]))
 
 rewards, steps = [], []
 predict_rewards, predict_steps = [], []
-for d in data:
+for d in data[-250:]:
     for reward in d['mean_reward'].values():
         rewards.append(reward)
         steps.append(d['step'])
