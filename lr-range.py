@@ -61,29 +61,26 @@ controller = HyperbandController(
 worker = CellWorker(num_nodes=args.num_nodes).to(torch.device('cuda'))
 worker.verbose = True
 
-res = {}
+fitists = {}
 for i, path in enumerate(controller.population):
     print(i, path)
     worker.set_path(path)
     
-    hp, loss = HPFind.find(worker, dataloaders, mode='train', hp_init=1e-4)
+    hp_hist, loss_hist = HPFind.find(worker, dataloaders, mode='train', hp_init=1e-4)
     
-    lrs = [h['lr'] for h in hp.squeeze()][:-1]
-    loss = loss[:-1]
-    
-    res[tuple(path)] = {
-        "lrs"  : lrs,
-        "loss" : loss,
+    fitists[tuple(path)] = {
+        "lrs"  : hp_hist.squeeze(),
+        "loss" : loss_hist,
     }
     
-    for p, v in res.items():
+    for p, v in fitists.items():
         lrs, loss = v['lrs'], v['loss']
         _ = plt.plot(np.log10(lrs), np.log10(loss), label=p)
         
     show_plot()
 
-amins = [pd.Series(v['loss']).rolling(10).mean().argmin() for v in res.values()]
-best = np.array([v['lrs'][a] for v,a in zip(res.values(), amins)])
+argmins = [pd.Series(v['loss']).rolling(10).mean().argmin() for v in fitists.values()]
+best  = np.array([v['lrs'][a] for v,a in zip(fitists.values(), argmins)])
 
-np.array(list(res.keys()))[np.argsort(best)]
+np.array(list(fitists.keys()))[np.argsort(best)]
 

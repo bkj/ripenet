@@ -57,18 +57,20 @@ if __name__ == "__main__":
     worker = CellWorker(num_nodes=args.num_nodes).to(torch.device('cuda'))
     worker.verbose = True
     
-    hp, loss = HPFind.find(worker, dataloaders, mode='train', hp_init=1e-4, smooth_loss=True)
-    opt_lr = HPFind.get_optimal_hp()
-    print(opt_lr)
+    hp_hist, loss_hist = HPFind.find(worker, dataloaders, mode='train', hp_init=1e-4, smooth_loss=True)
+    opt_lr = HPFind.get_optimal_hp(hp_hist, loss_hist)
+    
+    _ = plt.plot(np.log10(hp_hist), np.log10(loss_hist))
+    show_plot()
     
     # --
     # Training options
     
-    lr_scheduler = getattr(HPSchedule, args.lr_schedule)(lr_max=lr, epochs=args.epochs)
+    lr_scheduler = getattr(HPSchedule, args.lr_schedule)(hp_max=opt_lr, epochs=args.epochs)
     worker.init_optimizer(
         opt=torch.optim.SGD,
         params=filter(lambda x: x.requires_grad, worker.parameters()),
-        lr_scheduler={
+        hp_scheduler={
             "lr" : lr_scheduler
         },
         momentum=0.9,
