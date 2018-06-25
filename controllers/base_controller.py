@@ -106,9 +106,6 @@ class MLPController(Controller):
         
         super().__init__(**kwargs)
         
-        self.decay = decay
-        self.z_weight = z_weight
-        
         self.output_length   = output_length
         self.output_channels = output_channels
         self.temperature     = temperature
@@ -165,9 +162,6 @@ class LSTMController(Controller):
         opt_params={}, cuda=False, **kwargs):
         
         super().__init__(**kwargs)
-        
-        self.decay = decay
-        self.z_weight = z_weight
         
         self.input_dim       = input_dim
         self.output_length   = output_length
