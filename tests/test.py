@@ -8,17 +8,18 @@ import sys
 import numpy as np
 from tqdm import tqdm
 
+from rsub import *
+from matplotlib import pyplot as plt
+
 import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
-from controllers import LSTMController, MLPController
-
 from basenet.helpers import to_numpy
 
-from rsub import *
-from matplotlib import pyplot as plt
+sys.path.append('../')
+from controllers import LSTMController, MLPController
 
 # --
 # Simple environment
@@ -29,7 +30,7 @@ class SimpleEnv(object):
         self._payouts = torch.FloatTensor(([1] * n) + ([-1] * n))
     
     def eval(self, actions):
-        rewards = self._payouts * actions.cpu().data.float()
+        rewards = self._payouts * actions.cpu().float()
         return rewards.sum(dim=1).view(-1, 1)
 
 # --
@@ -43,7 +44,10 @@ if __name__ == "__main__":
     output_length   = 16
     output_channels = 2
     controller_type = 'lstm'
+    step_type       = 'reinforce_step'
     cuda            = True
+    
+    assert step_type in ['reinforce_step', 'ppo_step']
     
     env = SimpleEnv(output_length=output_length)
     
@@ -56,10 +60,10 @@ if __name__ == "__main__":
     
     all_rewards, all_actions = [], []
     for _ in tqdm(range(500)):
-        states = Variable(torch.zeros((batch_size, input_dim))).cuda()
-        actions, log_probs, entropies = controller.sample(states)
+        states = torch.zeros((batch_size, input_dim)).to(torch.device('cuda'))
+        actions, log_probs, entropies = controller(states)
         rewards = env.eval(actions)
-        controller.step(rewards, log_probs, entropies=entropies, entropy_penalty=entropy_penalty)
+        getattr(controller, step_type)(rewards, log_probs, entropies=entropies, entropy_penalty=entropy_penalty)
         
         all_rewards.append(to_numpy(rewards))
         all_actions.append(to_numpy(actions))

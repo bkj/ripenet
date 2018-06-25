@@ -3,3 +3,4 @@ scipy
 matplotlib
 git+https://github.com/bkj/rsub
 scikit-learn
+tqdm
