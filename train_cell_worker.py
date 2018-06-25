@@ -6,6 +6,7 @@
 
 
 import os
+import re
 import sys
 import json
 import argparse
@@ -57,16 +58,13 @@ if __name__ == "__main__":
     worker = CellWorker(num_nodes=args.num_nodes).to(torch.device('cuda'))
     worker.verbose = True
     
-    hp_hist, loss_hist = HPFind.find(worker, dataloaders, mode='train', hp_init=1e-4, smooth_loss=True)
-    opt_lr = HPFind.get_optimal_hp(hp_hist, loss_hist)
-    
-    _ = plt.plot(np.log10(hp_hist), np.log10(loss_hist))
-    show_plot()
+    # hp_hist, loss_hist = HPFind.find(worker, dataloaders, mode='train', hp_init=1e-4, smooth_loss=True)
+    # opt_lr = HPFind.get_optimal_hp(hp_hist, loss_hist)
     
     # --
     # Training options
     
-    lr_scheduler = getattr(HPSchedule, args.lr_schedule)(hp_max=opt_lr, epochs=args.epochs)
+    lr_scheduler = getattr(HPSchedule, args.lr_schedule)(hp_max=0.1, epochs=args.epochs)
     worker.init_optimizer(
         opt=torch.optim.SGD,
         params=filter(lambda x: x.requires_grad, worker.parameters()),
@@ -104,7 +102,8 @@ if __name__ == "__main__":
     worker.verbose = True
     for epoch in range(args.epochs):
         print('epoch=%d' % epoch, file=sys.stderr)
-        train_acc = worker.train_epoch(dataloaders)['acc']
+        print(worker.train_epoch(dataloaders, mode='train', num_batches=10), file=sys.stderr)
+        train_acc = worker.train_epoch(dataloaders, mode='train', num_batches=10)['acc']
         history.append(OrderedDict([
             ("epoch",     int(epoch)),
             ("train_acc", float(train_acc)),
