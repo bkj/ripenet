@@ -1,7 +1,8 @@
-tmp.png
+*png
 *pyc
-__pycache__/*
-*/__pycache__/*
 data/*
+runs/*
 _results/*
 pretrained_models/*
+__pycache__/*
+*/__pycache__/*

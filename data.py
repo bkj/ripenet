@@ -11,12 +11,13 @@ from sklearn.model_selection import train_test_split
 
 import torch
 import torchvision
+from basenet.vision import transforms as btransforms
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 def make_mnist_dataloaders(root='data', mode='mnist', train_size=1.0, train_batch_size=128, 
-    eval_batch_size=256, num_workers=8, seed=1111, download=False, pretensor=False, pin_memory=False):
+    eval_batch_size=256, num_workers=8, seed=1111, download=False, pretensor=False, pin_memory=False, shuffle_train):
     
     if mode == 'mnist':
         if pretensor:
@@ -26,7 +27,7 @@ def make_mnist_dataloaders(root='data', mode='mnist', train_size=1.0, train_batc
         else:
             transform = torchvision.transforms.Compose([
                torchvision.transforms.ToTensor(),
-               torchvision.transforms.Normalize((0.1307,), (0.3081,))
+               torchvision.transforms.Normalize((0.1307,), (0.3081,)),
             ])
         
         trainset = torchvision.datasets.MNIST(root='%s/mnist' % root, train=True, 
@@ -50,24 +51,24 @@ def make_mnist_dataloaders(root='data', mode='mnist', train_size=1.0, train_batc
     else:
         raise Exception
     
-    return _make_loaders(trainset, testset, train_size, train_batch_size, eval_batch_size, num_workers, seed, pin_memory)
+    return _make_loaders(trainset, testset, train_size, train_batch_size, eval_batch_size, num_workers, seed, pin_memory, shuffle_train)
 
 
 def make_cifar_dataloaders(root='data', mode='CIFAR10', train_size=1.0, train_batch_size=128, 
-    eval_batch_size=128, num_workers=8, seed=1111, download=False, pin_memory=True, shuffle_test=True):
+    eval_batch_size=128, num_workers=8, seed=1111, download=False, pin_memory=True, shuffle_test=True, shuffle_train=True):
     
     if mode == 'CIFAR10':
         transform_train = torchvision.transforms.Compose([
             torchvision.transforms.RandomCrop(32, padding=4),
             torchvision.transforms.RandomHorizontalFlip(),
             torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            btransforms.NormalizeDataset(dataset='cifar10')
         ])
         # !! `transform_train` gets applied to _val_ dataset as well
         
         transform_test = torchvision.transforms.Compose([
             torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            btransforms.NormalizeDataset(dataset='cifar10')
         ])
         
         trainset = torchvision.datasets.CIFAR10(root='%s/CIFAR10' % root, train=True, download=download, transform=transform_train)
@@ -76,11 +77,11 @@ def make_cifar_dataloaders(root='data', mode='CIFAR10', train_size=1.0, train_ba
         raise Exception
     
     return _make_loaders(trainset, testset, train_size, train_batch_size, eval_batch_size, 
-        num_workers, seed, pin_memory, shuffle_test)
+        num_workers, seed, pin_memory, shuffle_test, shuffle_train)
 
 
 def _make_loaders(trainset, testset, train_size, train_batch_size, eval_batch_size,
-    num_workers, seed, pin_memory, shuffle_test):
+    num_workers, seed, pin_memory, shuffle_test, shuffle_train):
     
     if train_size < 1:
         train_inds, val_inds = train_test_split(np.arange(len(trainset)), train_size=train_size, random_state=seed)
@@ -96,7 +97,7 @@ def _make_loaders(trainset, testset, train_size, train_batch_size, eval_batch_si
     else:
         trainloader = torch.utils.data.DataLoader(
             trainset, batch_size=train_batch_size, num_workers=num_workers, pin_memory=pin_memory,
-            shuffle=True,
+            shuffle=shuffle_train,
         )
         
         valloader = None
