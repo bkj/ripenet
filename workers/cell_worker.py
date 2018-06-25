@@ -63,45 +63,43 @@ class Flatten(PipeModule):
 # SHARED_BN = True
 # print('******** SHARED_BN=%d ********' % SHARED_BN, file=sys.stderr)
 # if not SHARED_BN:
-#     class PipeBatchNorm2d(PipeModule):
-#         def __init__(self, *args, **kwargs):
-#             super().__init__(needs_path=True)
+    # class PipeBatchNorm2d(PipeModule):
+    #     def __init__(self, *args, **kwargs):
+    #         super().__init__(needs_path=True)
             
-#             self.make_new_layer = lambda: nn.BatchNorm2d(*args, **kwargs).cuda()
+    #         self.make_new_layer = lambda: nn.BatchNorm2d(*args, **kwargs).cuda()
             
-#             self.layers = {}
-#             self.active_path = None
+    #         self.layers = {}
+    #         self.active_path = None
         
-#         def set_path(self, path, callback):
-#             path_desc = str(tuple(path))
-#             if path_desc not in self.layers:
-#                 new_layer = self.make_new_layer()        # Create new layer
-#                 self.layers[path_desc] = new_layer       # Add to dict
-#                 self.add_module(path_desc, new_layer)    # Register
-#                 callback(mode='bn', new_layer=new_layer)
+    #     def set_path(self, path, callback):
+    #         path_desc = str(tuple(path))
+    #         if path_desc not in self.layers:
+    #             new_layer = self.make_new_layer()        # Create new layer
+    #             self.layers[path_desc] = new_layer       # Add to dict
+    #             self.add_module(path_desc, new_layer)    # Register
+    #             callback(mode='bn', new_layer=new_layer)
             
-#             self.active_path = path_desc
+    #         self.active_path = path_desc
         
-#         def forward(self, x):
-#             raise Exception
-#             # assert self.active_path is not None, "!! PipeBatchNorm2d: active_path is None"
-#             # return self.layers[self.active_path](x)
+    #     def forward(self, x):
+    #         assert self.active_path is not None, "!! PipeBatchNorm2d: active_path is None"
+    #         return self.layers[self.active_path](x)
 # else:
-#     class PipeBatchNorm2d(PipeModule):
-#         def __init__(self, *args, **kwargs):
-#             super().__init__(needs_path=True)
-            
-#             kwargs.update({
-#                 "track_running_stats" : False,
-#             })
-#             self.layer = nn.BatchNorm2d(*args, **kwargs).cuda()
-            
-#         def set_path(self, path, callback):
-#             pass
+class PipeBatchNorm2d(PipeModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(needs_path=True)
         
-#         def forward(self, x):
-#             raise Exception
-#             # return self.layer(x)
+        # kwargs.update({
+        #     "track_running_stats" : False,
+        # })
+        self.layer = nn.BatchNorm2d(*args, **kwargs)
+        
+    def set_path(self, path, callback):
+        pass
+    
+    def forward(self, x):
+        return self.layer(x)
 
 
 class IdentityLayer(PipeModule):
@@ -112,7 +110,7 @@ class IdentityLayer(PipeModule):
         self.out_channels = out_channels
         
         if (in_channels != out_channels) or (stride != 1):
-            # self.bn = PipeBatchNorm2d(in_channels)
+            self.bn = PipeBatchNorm2d(in_channels)
             self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, stride=stride, kernel_size=stride)
         else:
             self.conv = None
@@ -120,12 +118,13 @@ class IdentityLayer(PipeModule):
     
     def forward(self, x):
         if self.conv is not None:
-            # return self.conv(self.bn(x))
-            return self.conv(x)
+            return self.conv(self.bn(x))
+            # return self.conv(x)
         else:
             return x
     
-    # def set_path(self, path, callback):
+    def set_path(self, path, callback):
+        pass
     #     if self.bn is not None:
     #         _ = self.bn.set_path(path, callback)
     
@@ -156,15 +155,16 @@ class BNConv2d(PipeModule):
     def __init__(self, in_channels, out_channels, **kwargs):
         super().__init__(needs_path=True)
         
-        # self.add_module('bn', PipeBatchNorm2d(in_channels))
+        self.add_module('bn', PipeBatchNorm2d(in_channels))
         self.add_module('relu', nn.ReLU())
         self.add_module('conv', nn.Conv2d(in_channels, out_channels, **kwargs))
     
     def forward(self, x):
-        # return self.conv(self.relu(self.bn(x)))
-        return self.conv(self.relu(x))
+        return self.conv(self.relu(self.bn(x)))
+        # return self.conv(self.relu(x))
     
-    # def set_path(self, path, callback):
+    def set_path(self, path, callback):
+        pass
     #     _ = self.bn.set_path(path, callback)
     
     def __repr__(self):
@@ -406,46 +406,45 @@ class _CellWorker(BaseNet):
 
 
 class CellWorker(_CellWorker):
-    pass
-#     def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[32, 64, 128, 256, 512], num_nodes=2):
-#         super().__init__()
+    def __init__(self, num_classes=10, input_channels=3, num_blocks=[2, 2, 2, 2], num_channels=[32, 64, 128, 256, 512], num_nodes=2):
+        super().__init__()
         
-#         self.num_nodes = num_nodes
+        self.num_nodes = num_nodes
         
-#         self.prep = nn.Conv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=3, padding=1)
+        self.prep = nn.Conv2d(in_channels=input_channels, out_channels=num_channels[0], kernel_size=3, padding=1)
         
-#         self.cell_blocks = []
+        self.cell_blocks = []
         
-#         all_layers = []
-#         for i, (block, in_channels, out_channels) in enumerate(zip(num_blocks, num_channels[:-1], num_channels[1:])):
-#             layers = []
+        all_layers = []
+        for i, (block, in_channels, out_channels) in enumerate(zip(num_blocks, num_channels[:-1], num_channels[1:])):
+            layers = []
             
-#             # Add cell at beginning that changes num channels
-#             cell_block = CellBlock(in_channels=in_channels, out_channels=out_channels, num_nodes=num_nodes, stride=2 if i > 0 else 1)
-#             layers.append(cell_block)
-#             self.cell_blocks.append(cell_block)
+            # Add cell at beginning that changes num channels
+            cell_block = CellBlock(in_channels=in_channels, out_channels=out_channels, num_nodes=num_nodes, stride=2 if i > 0 else 1)
+            layers.append(cell_block)
+            self.cell_blocks.append(cell_block)
             
-#             # Add cells that preserve channels
-#             for _ in range(block - 1):
-#                 cell_block = CellBlock(in_channels=out_channels, out_channels=out_channels, num_nodes=num_nodes , stride=1)
-#                 layers.append(cell_block)
-#                 self.cell_blocks.append(cell_block)
+            # Add cells that preserve channels
+            for _ in range(block - 1):
+                cell_block = CellBlock(in_channels=out_channels, out_channels=out_channels, num_nodes=num_nodes , stride=1)
+                layers.append(cell_block)
+                self.cell_blocks.append(cell_block)
             
-#             all_layers.append(nn.Sequential(*layers))
+            all_layers.append(nn.Sequential(*layers))
         
-#         self.layers = nn.Sequential(*all_layers)
+        self.layers = nn.Sequential(*all_layers)
         
-#         self.classifier = nn.Linear(num_channels[-1], num_classes)
+        self.classifier = nn.Linear(num_channels[-1], num_classes)
     
-#     def forward(self, x):
-#         x = self.prep(x)
-#         x = self.layers(x)
+    def forward(self, x):
+        x = self.prep(x)
+        x = self.layers(x)
         
-#         x = F.adaptive_avg_pool2d(x, (1, 1))
-#         x = x.view(x.size(0), -1)
-#         x = self.classifier(x)
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
         
-#         return x
+        return x
 
 from .layers import AdaptiveMultiPool2d, Flatten
 class BoltWorker(_CellWorker):

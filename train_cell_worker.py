@@ -4,26 +4,29 @@
     main.py
 """
 
+
 import os
-import re
 import sys
 import json
 import argparse
 import numpy as np
-from tqdm import tqdm
-from collections import OrderedDict
+import pandas as pd
+
+from rsub import *
+from matplotlib import pyplot as plt
 
 import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
-from data import make_cifar_dataloaders, make_mnist_dataloaders
+from controllers import HyperbandController
 from workers import CellWorker
+from data import make_cifar_dataloaders, make_mnist_dataloaders
+from logger import Logger
 
-import basenet
-from basenet.lr import LRSchedule
 from basenet.helpers import to_numpy, set_seeds
+from basenet.hp_schedule import HPSchedule, HPFind
 
 np.set_printoptions(linewidth=120)
 
@@ -33,20 +36,12 @@ np.set_printoptions(linewidth=120)
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--outpath', type=str, default='delete-me')
-    parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'fashion_mnist', 'mnist'])
-    parser.add_argument('--architecture', type=str, default='0002_0112')
-    
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--architecture', type=str, required="0000_0000")
+    parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--lr-schedule', type=str, default='linear')
-    parser.add_argument('--lr-init', type=float, default=0.1)
-    
     parser.add_argument('--num-nodes', type=int, default=2) # Number of cells to sample
-    
     parser.add_argument('--train-size', type=float, default=0.9)
-    parser.add_argument('--pretrained-path', type=str, default=None)
-    
     parser.add_argument('--seed', type=int, default=123)
-    
     return parser.parse_args()
 
 
@@ -58,42 +53,26 @@ if __name__ == "__main__":
     # --
     # IO
     
-    if args.dataset == 'cifar10':
-        print('train_cell_worker: make_cifar_dataloaders', file=sys.stderr)
-        dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pin_memory=True)
-    elif 'mnist' in args.dataset:
-        print('train_cell_worker: make_mnist_dataloaders (%s)' % args.dataset, file=sys.stderr)
-        dataloaders = make_mnist_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pretensor=True, mode=args.dataset)
-    else:
-        raise Exception()
+    dataloaders = make_cifar_dataloaders(train_size=args.train_size, download=False, seed=args.seed, pin_memory=True)
+    worker = CellWorker(num_nodes=args.num_nodes).to(torch.device('cuda'))
+    worker.verbose = True
     
-    # --
-    # Model
-    
-    if args.dataset == 'cifar10':
-        worker = CellWorker(num_nodes=args.num_nodes).cuda()
-    elif 'mnist' in args.dataset:
-        # worker = CellWorker(input_channels=1, num_blocks=[1, 1, 1], num_channels=[16, 32, 64], num_nodes=args.num_nodes).cuda()
-        # worker = MNISTCellWorker(num_nodes=args.num_nodes).cuda()
-        raise Exception()
-    else:
-        raise Exception()
-        
-    if args.pretrained_path is not None:
-        print('main.py: loading pretrained model %s' % args.pretrained_path, file=sys.stderr)
-        worker.load_state_dict(torch.load(args.pretrained_path))
-    
+    hp, loss = HPFind.find(worker, dataloaders, mode='train', hp_init=1e-4, smooth_loss=True)
+    opt_lr = HPFind.get_optimal_hp()
+    print(opt_lr)
     
     # --
     # Training options
     
-    lr_scheduler = getattr(LRSchedule, args.lr_schedule)(lr_init=args.lr_init, epochs=args.epochs)
+    lr_scheduler = getattr(HPSchedule, args.lr_schedule)(lr_max=lr, epochs=args.epochs)
     worker.init_optimizer(
         opt=torch.optim.SGD,
         params=filter(lambda x: x.requires_grad, worker.parameters()),
-        lr_scheduler=lr_scheduler,
+        lr_scheduler={
+            "lr" : lr_scheduler
+        },
         momentum=0.9,
-        weight_decay=5e-4
+        # weight_decay=5e-4
     )
     
     # Set architectecture
