@@ -37,7 +37,7 @@ np.set_printoptions(linewidth=120)
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--outpath', type=str, default='delete-me')
-    parser.add_argument('--architecture', type=str, default="0000_0000")
+    parser.add_argument('--architecture', type=str, required=True)
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--lr-schedule', type=str, default='linear')
     parser.add_argument('--num-nodes', type=int, default=2) # Number of cells to sample
@@ -58,13 +58,33 @@ if __name__ == "__main__":
     worker = CellWorker(num_nodes=args.num_nodes).to(torch.device('cuda'))
     worker.verbose = True
     
-    # hp_hist, loss_hist = HPFind.find(worker, dataloaders, mode='train', hp_init=1e-4, smooth_loss=True)
-    # opt_lr = HPFind.get_optimal_hp(hp_hist, loss_hist)
+    # --
+    # Set architectecture
+    
+    architecture = list(re.sub('[^0-9]','', args.architecture))
+    architecture = np.array(list(map(int, architecture)))
+    assert len(architecture) == (4 * worker.num_nodes), "len(architecture) != 4 * worker.num_nodes"
+    print('train_cell_worker: worker.set_path(%s)' % args.architecture, file=sys.stderr)
+    worker.set_path(architecture)
+    worker.trim_pipes()
+    
+    cell_pipes = worker.get_pipes()[0]
+    config = vars(args)
+    print('pipes ->', cell_pipes, file=sys.stderr)
+    config['_pipes'] = cell_pipes
+    json.dump(config, open(args.outpath + '.config', 'w'))
+    
     
     # --
-    # Training options
+    # LR range test
     
-    lr_scheduler = getattr(HPSchedule, args.lr_schedule)(hp_max=0.1, epochs=args.epochs)
+    hp_hist, loss_hist = HPFind.find(worker, dataloaders, mode='train', hp_init=1e-4, smooth_loss=True)
+    opt_lr = HPFind.get_optimal_hp(hp_hist, loss_hist)
+    
+    # --
+    # Set optimizer
+    
+    lr_scheduler = getattr(HPSchedule, args.lr_schedule)(hp_max=opt_lr, epochs=args.epochs)
     worker.init_optimizer(
         opt=torch.optim.SGD,
         params=filter(lambda x: x.requires_grad, worker.parameters()),
@@ -75,42 +95,22 @@ if __name__ == "__main__":
         # weight_decay=5e-4
     )
     
-    # Set architectecture
-    architecture = list(re.sub('[^0-9]','', args.architecture))
-    architecture = np.array(list(map(int, architecture)))
-    assert len(architecture) == (4 * worker.num_nodes), "len(architecture) != 4 * worker.num_nodes"
-    print('train_cell_worker: worker.set_path(%s)' % args.architecture, file=sys.stderr)
-    worker.set_path(architecture)
-    worker.trim_pipes()
-    
-    print(worker, file=sys.stderr)
-    
-    cell_pipes = worker.get_pipes()[0]
-    config = vars(args)
-    print('pipes ->', cell_pipes, file=sys.stderr)
-    config['_pipes'] = cell_pipes
-    json.dump(config, open(args.outpath + '.config', 'w'))
     
     # --
     # Run
     
-    print('train_cell_worker: run', file=sys.stderr)
-    
     logfile = open(args.outpath + '.log', 'w')
-    
-    history = []
-    worker.verbose = True
     for epoch in range(args.epochs):
         print('epoch=%d' % epoch, file=sys.stderr)
         
-        train_acc = worker.train_epoch(dataloaders, mode='train')['acc']
-        history.append({
+        train_acc = worker.train_epoch(dataloaders, mode='train', compute_acc=True)['acc']
+        print(json.dumps({
             "epoch"     : int(epoch),
+            "lr"        : worker.hp['lr'],
             "train_acc" : float(train_acc),
-            "val_acc"   : float(worker.eval_epoch(dataloaders, mode='val')['acc']) if 'val' in dataloaders else None,
-            "test_acc"  : float(worker.eval_epoch(dataloaders, mode='test')['acc']),
-        })
-        print(json.dumps(history[-1]), file=logfile)
+            "val_acc"   : float(worker.eval_epoch(dataloaders, mode='val', compute_acc=True)['acc']) if 'val' in dataloaders else None,
+            "test_acc"  : float(worker.eval_epoch(dataloaders, mode='test', compute_acc=True)['acc']),
+        }), file=logfile)
         logfile.flush()
         
     worker.save(args.outpath + '.weights')

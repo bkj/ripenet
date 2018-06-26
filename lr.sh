@@ -8,7 +8,7 @@ function train {
     echo "GPU=$CUDA_VISIBLE_DEVICES"
     for ARCH in $@; do
         echo "ARCH=$ARCH"
-        python tests/train_cell_worker.py --outpath pretrained_models/cell_worker-$ARCH --architecture $ARCH > pretrained_models/cell_worker-$ARCH.log    
+        python train_cell_worker.py --outpath lr_arches/cell_worker-$ARCH --architecture $ARCH > lr_arches/cell_worker-$ARCH.log    
     done
 }
 export -f train
